@@ -1,0 +1,39 @@
+name: Roll Back MCGateway Test to Stable
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  rollback:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Sign in to GitHub Container Registry
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Confirm stable image exists
+        run: |
+          docker buildx imagetools inspect \
+            ghcr.io/jaxdoesit/mcgateway-broadcast:stable
+
+      - name: Restore test tag to stable
+        run: |
+          docker buildx imagetools create \
+            --tag ghcr.io/jaxdoesit/mcgateway-broadcast:test \
+            ghcr.io/jaxdoesit/mcgateway-broadcast:stable
+
+      - name: Verify restored test image
+        run: |
+          docker buildx imagetools inspect \
+            ghcr.io/jaxdoesit/mcgateway-broadcast:test
