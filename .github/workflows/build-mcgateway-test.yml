@@ -2,24 +2,99 @@ name: Build MCGateway Test Image
 
 on:
   workflow_dispatch:
+    inputs:
+      force_rebuild:
+        description: Rebuild even if this release was already processed
+        required: false
+        type: boolean
+        default: false
+
+  schedule:
+    - cron: "7,17,27,37,47,57 * * * *"
+
+concurrency:
+  group: mcgateway-test-image-build
+  cancel-in-progress: false
 
 permissions:
   contents: read
   packages: write
+
+env:
+  IMAGE: ghcr.io/jaxdoesit/mcgateway-broadcast
+  PATCH_REPOSITORY: JaxDoesIt/Broadcaster-unfollow
+  PATCH_BRANCH: friends-remove-command
+  PATCH_COMMIT: 238afbdb1d2896ca3cc54196b68db5cc2d80b0ef
 
 jobs:
   build-test-image:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Download latest official MCXboxBroadcast source
+      - name: Find latest official MCXboxBroadcast release
+        id: release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          RELEASE_JSON="$(
+            curl --fail --silent --show-error \
+              --location \
+              --header "Accept: application/vnd.github+json" \
+              --header "Authorization: Bearer ${GH_TOKEN}" \
+              --header "X-GitHub-Api-Version: 2022-11-28" \
+              https://api.github.com/repos/MCXboxBroadcast/Broadcaster/releases/latest
+          )"
+
+          RELEASE_TAG="$(
+            printf '%s' "$RELEASE_JSON" \
+              | jq -r '.tag_name // empty'
+          )"
+
+          if [[ -z "$RELEASE_TAG" ]]; then
+            echo "Could not determine the latest official release tag."
+            exit 1
+          fi
+
+          SAFE_TAG="$(
+            printf '%s' "$RELEASE_TAG" \
+              | sed 's/[^A-Za-z0-9_.-]/-/g'
+          )"
+
+          BUILD_NUMBER="$(
+            printf '%s' "$RELEASE_TAG" \
+              | grep -oE '[0-9]+' \
+              | tail -n 1
+          )"
+
+          if [[ -z "$BUILD_NUMBER" ]]; then
+            echo "Could not determine a numeric build number from: $RELEASE_TAG"
+            exit 1
+          fi
+
+          IMMUTABLE_TAG="${IMAGE}:release-${SAFE_TAG}-unfollow"
+
+          echo "release_tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
+          echo "safe_tag=$SAFE_TAG" >> "$GITHUB_OUTPUT"
+          echo "build_number=$BUILD_NUMBER" >> "$GITHUB_OUTPUT"
+          echo "immutable_tag=$IMMUTABLE_TAG" >> "$GITHUB_OUTPUT"
+
+          echo "IMMUTABLE_TAG=$IMMUTABLE_TAG" >> "$GITHUB_ENV"
+
+          echo "Latest official release: $RELEASE_TAG"
+          echo "Immutable image tag: $IMMUTABLE_TAG"
+
+      - name: Download exact official release source
         uses: actions/checkout@v6
         with:
           repository: MCXboxBroadcast/Broadcaster
-          ref: master
+          ref: ${{ steps.release.outputs.release_tag }}
           fetch-depth: 0
 
       - name: Apply MCGateway friends remove patch
+        id: patch
         shell: bash
         run: |
           set -euo pipefail
@@ -27,54 +102,90 @@ jobs:
           git config user.name "MCGateway Build Bot"
           git config user.email "actions@users.noreply.github.com"
 
-          git fetch \
-            https://github.com/JaxDoesIt/Broadcaster-unfollow.git \
-            friends-remove-command
+          LOGGER_FILE="bootstrap/standalone/src/main/java/com/rtm516/mcxboxbroadcast/bootstrap/standalone/StandaloneLoggerImpl.java"
+          FRIEND_FILE="core/src/main/java/com/rtm516/mcxboxbroadcast/core/FriendManager.java"
 
-          git cherry-pick 238afbd
+          if grep -Fq 'friends remove <xuid>' "$LOGGER_FILE" \
+            && grep -Fq 'removeRelationship(String xuid)' "$FRIEND_FILE"
+          then
+            echo "The official release already contains friend removal support."
+            echo "patch_mode=upstream" >> "$GITHUB_OUTPUT"
+          else
+            git remote add mcgateway-patch \
+              "https://github.com/${PATCH_REPOSITORY}.git"
 
-          grep -Fq \
-            'friends remove <xuid>' \
-            bootstrap/standalone/src/main/java/com/rtm516/mcxboxbroadcast/bootstrap/standalone/StandaloneLoggerImpl.java
+            git fetch \
+              --no-tags \
+              mcgateway-patch \
+              "${PATCH_BRANCH}"
 
-          echo "MCGateway friend removal patch applied successfully."
+            git cherry-pick "${PATCH_COMMIT}"
 
-      - name: Determine current MCXboxBroadcast build
+            echo "patch_mode=custom" >> "$GITHUB_OUTPUT"
+          fi
+
+          grep -Fq 'friends remove <xuid>' "$LOGGER_FILE"
+          grep -Fq 'removeRelationship(String xuid)' "$FRIEND_FILE"
+
+          echo "Friend removal support confirmed."
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Sign in to GitHub Container Registry
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Check whether this release was already built
+        id: existing
         shell: bash
+        env:
+          FORCE_REBUILD: ${{ github.event_name == 'workflow_dispatch' && inputs.force_rebuild || false }}
         run: |
           set -euo pipefail
 
-          BUILD_NUMBER="$(
-            git tag --list \
-              | grep -E '^[0-9]+$' \
-              | sort -V \
-              | tail -n 1
-          )"
-
-          if [[ -z "$BUILD_NUMBER" ]]; then
-            echo "Could not determine the current build number."
-            exit 1
+          if [[ "$FORCE_REBUILD" == "true" ]]; then
+            echo "A forced rebuild was requested."
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
 
-          echo "BUILD_NUMBER=$BUILD_NUMBER" >> "$GITHUB_ENV"
-          echo "Building MCXboxBroadcast Build $BUILD_NUMBER with MCGateway friend removal support."
-
-      - name: Validate Gradle wrapper
-        uses: gradle/actions/wrapper-validation@v5
+          if docker buildx imagetools inspect \
+            "$IMMUTABLE_TAG" \
+            >/dev/null 2>&1
+          then
+            echo "This release was already built."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "This is a new release."
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Set up Java 17
+        if: steps.existing.outputs.skip != 'true'
         uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "17"
 
+      - name: Validate Gradle wrapper
+        if: steps.existing.outputs.skip != 'true'
+        uses: gradle/actions/wrapper-validation@v5
+
       - name: Set up Gradle
+        if: steps.existing.outputs.skip != 'true'
         uses: gradle/actions/setup-gradle@v5
         with:
           gradle-home-cache-cleanup: true
 
       - name: Build patched Standalone JAR
+        if: steps.existing.outputs.skip != 'true'
         shell: bash
+        env:
+          BUILD_NUMBER: ${{ steps.release.outputs.build_number }}
         run: |
           set -euo pipefail
 
@@ -90,27 +201,38 @@ jobs:
           jar tf "$JAR" >/dev/null
 
           echo "Patched Standalone JAR built successfully."
-        env:
-          BUILD_NUMBER: ${{ env.BUILD_NUMBER }}
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
-
-      - name: Sign in to GitHub Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Build and publish test image
+      - name: Build and publish new test image
+        if: steps.existing.outputs.skip != 'true'
         uses: docker/build-push-action@v7
         with:
           context: .
           file: bootstrap/standalone/Dockerfile
           platforms: linux/amd64
           push: true
-          tags: ghcr.io/jaxdoesit/mcgateway-broadcast:test
+          tags: |
+            ghcr.io/jaxdoesit/mcgateway-broadcast:test
+            ${{ env.IMMUTABLE_TAG }}
           labels: |
             org.opencontainers.image.source=https://github.com/JaxDoesIt/Broadcaster-unfollow
             org.opencontainers.image.description=MCXboxBroadcast with MCGateway friend removal support
+            io.mcgateway.upstream-release=${{ steps.release.outputs.release_tag }}
+            io.mcgateway.patch-mode=${{ steps.patch.outputs.patch_mode }}
+
+      - name: Point test tag to existing release image
+        if: steps.existing.outputs.skip == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          docker buildx imagetools create \
+            --tag ghcr.io/jaxdoesit/mcgateway-broadcast:test \
+            "$IMMUTABLE_TAG"
+
+      - name: Verify published test image
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          docker buildx imagetools inspect \
+            ghcr.io/jaxdoesit/mcgateway-broadcast:test
