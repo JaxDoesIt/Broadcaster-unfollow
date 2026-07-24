@@ -24,7 +24,7 @@ env:
   IMAGE: ghcr.io/jaxdoesit/mcgateway-broadcast
   PATCH_REPOSITORY: JaxDoesIt/Broadcaster-unfollow
   PATCH_BRANCH: friends-remove-command
-  PATCH_COMMIT: 238afbdb1d2896ca3cc54196b68db5cc2d80b0ef
+  PATCH_COMMIT: 62d9bae44b34a9ddc5ee61c787e055a951151e63
 
 jobs:
   build-test-image:
