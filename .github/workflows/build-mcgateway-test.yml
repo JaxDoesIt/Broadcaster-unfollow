@@ -23,8 +23,8 @@ permissions:
 env:
   IMAGE: ghcr.io/jaxdoesit/mcgateway-broadcast
   PATCH_REPOSITORY: JaxDoesIt/Broadcaster-unfollow
-  PATCH_BRANCH: friends-sync-cooldown-v4
-  PATCH_COMMIT: 5c50756629eae3dc99f6099e89a6934c6a873214
+  PATCH_BRANCH: friends-sync-null-safe-v5
+  PATCH_COMMIT: 35babd7418882a521c8ea2a5b725a912aa43b616
 
 jobs:
   build-test-image:
