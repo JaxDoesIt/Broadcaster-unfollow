@@ -18,7 +18,7 @@ FRIEND_PATH = Path("core/src/main/java/com/rtm516/mcxboxbroadcast/core/FriendMan
 LOGGER_PATH = Path("bootstrap/standalone/src/main/java/com/rtm516/mcxboxbroadcast/bootstrap/standalone/StandaloneLoggerImpl.java")
 README_PATH = Path("README.md")
 
-MARKER = "MCGATEWAY_FRIEND_SYNC_OVERLAY_V6"
+MARKER = "MCGATEWAY_FRIEND_SYNC_OVERLAY_V7"
 
 
 def fail(message: str) -> "NoReturn":
@@ -248,54 +248,74 @@ def patch_friend_manager(path: Path) -> bool:
         "friend sync helpers",
     )
 
-    old_loop = '''            sessionManager.scheduledThread().scheduleWithFixedDelay(() -> {
-                try {
-                    for (FollowerResponse.Person person : get()) {
-                        // Make sure we are not targeting a subaccount (eg: split screen)
-                        if (isGuestAccount(person.xuid)) {
-                            continue;
-                        }
-                        // Follow the person back
-                        if (friendSyncConfig.autoFollow() && person.isFollowingCaller && !person.isFollowedByCaller) {
-                            add(person.xuid, person.displayName);
-                        }
-                        // Unfollow the person
-                        if (friendSyncConfig.autoUnfollow() && !person.isFollowingCaller && person.isFollowedByCaller) {
-                            remove(person.xuid, person.displayName);
-                        }
-                    }
-'''
-    new_loop = '''            sessionManager.scheduledThread().scheduleWithFixedDelay(() -> {
-                try {
-                    Instant now = Instant.now();
-                    if (friendSyncConfig.autoFollow()) {
-                        acceptPendingFriendRequestsSafely();
-                    }
+    # Patch only the small auto-follow portion inside initAutoFriend. The previous
+    # version matched the entire scheduled loop byte-for-byte, which was too
+    # brittle when upstream formatting or nearby comments changed.
+    method_start = text.find("    private void initAutoFriend(CoreConfig.FriendSyncConfig friendSyncConfig) {")
+    if method_start < 0:
+        fail("scheduled friend sync loop: initAutoFriend method not found")
 
-                    for (FollowerResponse.Person person : get()) {
-                        // Make sure we are not targeting a subaccount (eg: split screen)
-                        if (isGuestAccount(person.xuid)) {
-                            continue;
-                        }
+    method_end = text.find("    private boolean isGuestAccount(long xuid) {", method_start)
+    if method_end < 0:
+        fail("scheduled friend sync loop: isGuestAccount method anchor not found")
 
-                        if (person.isFollowingCaller && person.isFollowedByCaller) {
-                            autoFollowRetryAfter.remove(person.xuid);
-                        }
+    method_text = text[method_start:method_end]
 
-                        // Follow the person back, without repeating the same Xbox request every sync pass.
-                        if (friendSyncConfig.autoFollow() && person.isFollowingCaller && !person.isFollowedByCaller) {
-                            if (!isAutoFollowCoolingDown(person.xuid, now)) {
-                                markAutoFollowAttempt(person.xuid, now);
-                                add(person.xuid, person.displayName);
-                            }
-                        }
-                        // Unfollow the person
-                        if (friendSyncConfig.autoUnfollow() && !person.isFollowingCaller && person.isFollowedByCaller) {
-                            remove(person.xuid, person.displayName);
-                        }
-                    }
-'''
-    text = replace_once(text, old_loop, new_loop, "scheduled friend sync loop")
+    loop_pattern = re.compile(
+        r"(?m)^(?P<indent>[ \t]*)for\s*\(\s*FollowerResponse\.Person\s+person\s*:\s*get\(\)\s*\)\s*\{"
+    )
+    loop_matches = list(loop_pattern.finditer(method_text))
+    if len(loop_matches) != 1:
+        fail(f"scheduled friend sync loop: expected one follower loop, found {len(loop_matches)}")
+
+    loop_match = loop_matches[0]
+    loop_indent = loop_match.group("indent")
+    loop_setup = (
+        f"{loop_indent}Instant now = Instant.now();\n"
+        f"{loop_indent}if (friendSyncConfig.autoFollow()) {{\n"
+        f"{loop_indent}    acceptPendingFriendRequestsSafely();\n"
+        f"{loop_indent}}}\n\n"
+    )
+    method_text = (
+        method_text[:loop_match.start()]
+        + loop_setup
+        + method_text[loop_match.start():]
+    )
+
+    auto_follow_pattern = re.compile(
+        r"(?m)^(?P<indent>[ \t]*)if\s*\(\s*friendSyncConfig\.autoFollow\(\)\s*&&\s*"
+        r"person\.isFollowingCaller\s*&&\s*!person\.isFollowedByCaller\s*\)\s*\{\s*\n"
+        r"(?P=indent)[ \t]+add\(person\.xuid,\s*person\.displayName\);\s*\n"
+        r"(?P=indent)\}"
+    )
+    auto_follow_matches = list(auto_follow_pattern.finditer(method_text))
+    if len(auto_follow_matches) != 1:
+        fail(
+            "scheduled friend sync loop: expected one upstream auto-follow block, "
+            f"found {len(auto_follow_matches)}"
+        )
+
+    auto_follow_match = auto_follow_matches[0]
+    indent = auto_follow_match.group("indent")
+    auto_follow_replacement = (
+        f"{indent}if (person.isFollowingCaller && person.isFollowedByCaller) {{\n"
+        f"{indent}    autoFollowRetryAfter.remove(person.xuid);\n"
+        f"{indent}}}\n\n"
+        f"{indent}// Follow the person back, without repeating the same Xbox request every sync pass.\n"
+        f"{indent}if (friendSyncConfig.autoFollow() && person.isFollowingCaller && !person.isFollowedByCaller) {{\n"
+        f"{indent}    if (!isAutoFollowCoolingDown(person.xuid, now)) {{\n"
+        f"{indent}        markAutoFollowAttempt(person.xuid, now);\n"
+        f"{indent}        add(person.xuid, person.displayName);\n"
+        f"{indent}    }}\n"
+        f"{indent}}}"
+    )
+    method_text = (
+        method_text[:auto_follow_match.start()]
+        + auto_follow_replacement
+        + method_text[auto_follow_match.end():]
+    )
+
+    text = text[:method_start] + method_text + text[method_end:]
 
     text = replace_once(
         text,
@@ -475,4 +495,5 @@ if __name__ == "__main__":
         raise SystemExit(main())
     except RuntimeError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
+        raise SystemExit(1)
         raise SystemExit(1)
