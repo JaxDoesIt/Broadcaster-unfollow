@@ -24,7 +24,7 @@ env:
   IMAGE: ghcr.io/jaxdoesit/mcgateway-broadcast
   PATCH_REPOSITORY: JaxDoesIt/Broadcaster-unfollow
   PATCH_BRANCH: friends-sync-null-safe-v5
-  PATCH_COMMIT: 35babd7418882a521c8ea2a5b725a912aa43b616
+  PATCH_SCRIPT: tools/apply_mcgateway_friend_patch.py
 
 jobs:
   build-test-image:
@@ -93,14 +93,11 @@ jobs:
           ref: ${{ steps.release.outputs.release_tag }}
           fetch-depth: 0
 
-      - name: Apply MCGateway friends remove patch
+      - name: Apply future-compatible MCGateway friend overlay
         id: patch
         shell: bash
         run: |
           set -euo pipefail
-
-          git config user.name "MCGateway Build Bot"
-          git config user.email "actions@users.noreply.github.com"
 
           LOGGER_FILE="bootstrap/standalone/src/main/java/com/rtm516/mcxboxbroadcast/bootstrap/standalone/StandaloneLoggerImpl.java"
           FRIEND_FILE="core/src/main/java/com/rtm516/mcxboxbroadcast/core/FriendManager.java"
@@ -113,22 +110,26 @@ jobs:
           else
             git remote add mcgateway-patch \
               "https://github.com/${PATCH_REPOSITORY}.git"
-
             git fetch \
               --no-tags \
               mcgateway-patch \
               "${PATCH_BRANCH}"
 
-            git cherry-pick "${PATCH_COMMIT}"
+            git show \
+              "mcgateway-patch/${PATCH_BRANCH}:${PATCH_SCRIPT}" \
+              > /tmp/apply_mcgateway_friend_patch.py
 
-            echo "patch_mode=custom" >> "$GITHUB_OUTPUT"
+            python3 /tmp/apply_mcgateway_friend_patch.py .
+            echo "patch_mode=semantic-overlay" >> "$GITHUB_OUTPUT"
           fi
 
+          git diff --check
           grep -Fq 'friends remove <xuid>' "$LOGGER_FILE"
           grep -Fq 'removeRelationship(String xuid)' "$FRIEND_FILE"
-
-          echo "Friend removal support confirmed."
-
+          grep -Fq 'friends/v2/xuid(" + xuid + ")' "$FRIEND_FILE"
+          grep -Fq 'friendRequestAcceptResponse.isFriend' "$FRIEND_FILE"
+          ! grep -Fq 'bulk/users/me/people/friends/v2?method=add' "$FRIEND_FILE"
+          echo "Friend removal and resilient sync support confirmed."
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
 
