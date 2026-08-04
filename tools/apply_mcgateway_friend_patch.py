@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""Apply the MCGateway friend-removal and resilient-sync overlay.
+"""Apply the MCGateway friend-removal overlay to current MCXboxBroadcast source.
 
-This intentionally keeps MCXboxBroadcast's upstream one-by-one pending-request
-implementation untouched. It adds small, anchored changes around it so future
-upstream releases are much less likely to conflict than the old 295-line
-cherry-pick.
+V10 intentionally avoids rewriting upstream friend synchronization, pending-request
+acceptance, retry scheduling, or rate-limit handling. It adds only the standalone
+friends remove command, a two-direction relationship removal method, and null-safe
+cache access. This keeps official release logic intact and greatly reduces future
+merge breakage.
 """
 
 from __future__ import annotations
@@ -13,101 +14,191 @@ import argparse
 import re
 import sys
 from pathlib import Path
+from typing import NoReturn
 
 FRIEND_PATH = Path("core/src/main/java/com/rtm516/mcxboxbroadcast/core/FriendManager.java")
-LOGGER_PATH = Path("bootstrap/standalone/src/main/java/com/rtm516/mcxboxbroadcast/bootstrap/standalone/StandaloneLoggerImpl.java")
+LOGGER_PATH = Path(
+    "bootstrap/standalone/src/main/java/com/rtm516/mcxboxbroadcast/bootstrap/standalone/StandaloneLoggerImpl.java"
+)
 README_PATH = Path("README.md")
 
-MARKER = "MCGATEWAY_FRIEND_SYNC_OVERLAY_V7"
+MARKER = "MCGATEWAY_FRIEND_SYNC_OVERLAY_V10"
+PATCHER_VERSION = "V10"
 
 
-def fail(message: str) -> "NoReturn":
+def fail(message: str) -> NoReturn:
     raise RuntimeError(message)
 
 
-def replace_once(text: str, old: str, new: str, label: str) -> str:
-    count = text.count(old)
+def replace_regex_once(text: str, pattern: str, replacement: str, label: str, flags: int = 0) -> str:
+    updated, count = re.subn(pattern, replacement, text, count=1, flags=flags)
     if count != 1:
         fail(f"{label}: expected exactly one anchor, found {count}")
-    return text.replace(old, new, 1)
+    return updated
 
 
-def insert_before_once(text: str, anchor: str, block: str, label: str) -> str:
-    return replace_once(text, anchor, block + anchor, label)
+def find_method_span(text: str, signature_pattern: str, label: str) -> tuple[int, int]:
+    """Return the [start, end) span of one Java method, using brace matching."""
+    matches = list(re.finditer(signature_pattern, text, flags=re.MULTILINE))
+    if len(matches) != 1:
+        fail(f"{label}: expected exactly one method signature, found {len(matches)}")
+
+    start = matches[0].start()
+    brace_start = text.find("{", matches[0].end())
+    if brace_start < 0:
+        fail(f"{label}: opening brace not found")
+
+    depth = 0
+    in_string = False
+    in_char = False
+    escaped = False
+    in_line_comment = False
+    in_block_comment = False
+
+    i = brace_start
+    while i < len(text):
+        ch = text[i]
+        nxt = text[i + 1] if i + 1 < len(text) else ""
+
+        if in_line_comment:
+            if ch == "\n":
+                in_line_comment = False
+            i += 1
+            continue
+
+        if in_block_comment:
+            if ch == "*" and nxt == "/":
+                in_block_comment = False
+                i += 2
+            else:
+                i += 1
+            continue
+
+        if in_string:
+            if escaped:
+                escaped = False
+            elif ch == "\\":
+                escaped = True
+            elif ch == '"':
+                in_string = False
+            i += 1
+            continue
+
+        if in_char:
+            if escaped:
+                escaped = False
+            elif ch == "\\":
+                escaped = True
+            elif ch == "'":
+                in_char = False
+            i += 1
+            continue
+
+        if ch == "/" and nxt == "/":
+            in_line_comment = True
+            i += 2
+            continue
+        if ch == "/" and nxt == "*":
+            in_block_comment = True
+            i += 2
+            continue
+        if ch == '"':
+            in_string = True
+            i += 1
+            continue
+        if ch == "'":
+            in_char = True
+            i += 1
+            continue
+
+        if ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                end = i + 1
+                if end < len(text) and text[end] == "\n":
+                    end += 1
+                return start, end
+        i += 1
+
+    fail(f"{label}: closing brace not found")
 
 
 def patch_friend_manager(path: Path) -> bool:
     text = path.read_text(encoding="utf-8")
-    if MARKER in text:
+    if MARKER in text and "removeRelationship(String xuid)" in text:
         print(f"Already patched: {path}")
         return False
 
-    # Guard against accidentally applying to the old bulk-request implementation.
-    required_upstream_markers = (
+    required = (
+        "public class FriendManager",
+        "public void forceUnfollow(String xuid) throws Exception",
+        "public List<FollowerResponse.Person> lastFriendCache()",
         "public void acceptPendingFriendRequests()",
-        "friends/v2/xuid(\" + xuid + \"",
+        'friends/v2/xuid(" + xuid + ")',
         "friendRequestAcceptResponse.isFriend",
+        "Constants.FOLLOWER",
+        "Constants.PEOPLE",
     )
-    for marker in required_upstream_markers:
-        if marker not in text:
-            fail(
-                f"{path}: upstream pending-request structure changed or is older than release 148/149; "
-                f"missing marker: {marker!r}"
-            )
-
+    missing = [marker for marker in required if marker not in text]
+    if missing:
+        fail(
+            f"{path}: upstream friend API structure changed; missing markers: "
+            + ", ".join(repr(item) for item in missing)
+        )
     if "bulk/users/me/people/friends/v2?method=add" in text:
         fail(f"{path}: obsolete bulk pending-request implementation detected")
 
-    text = replace_once(
-        text,
-        "import java.util.Set;\nimport java.util.concurrent.Future;",
-        "import java.util.Set;\nimport java.util.concurrent.ConcurrentHashMap;\nimport java.util.concurrent.Future;",
-        "ConcurrentHashMap import",
-    )
+    changed = False
 
-    text = replace_once(
-        text,
-        "    private boolean initialInvite;\n    private boolean shouldAcceptPendingRequests = true;\n",
-        "    private boolean initialInvite;\n"
-        "    private boolean shouldAcceptPendingRequests = true;\n"
-        f"    // {MARKER}\n"
-        "    // Xbox can temporarily report a relationship as one-sided after a successful request.\n"
-        "    // These short-lived guards stop repeated follow and invite operations across sync passes.\n"
-        "    private static final long AUTO_FOLLOW_COOLDOWN_SECONDS = TimeUnit.MINUTES.toSeconds(30);\n"
-        "    private static final long INVITE_COOLDOWN_SECONDS = TimeUnit.HOURS.toSeconds(6);\n"
-        "    private static final long PENDING_SWEEP_COOLDOWN_SECONDS = TimeUnit.MINUTES.toSeconds(5);\n"
-        "    private final Map<String, Instant> autoFollowRetryAfter = new ConcurrentHashMap<>();\n"
-        "    private final Map<String, Instant> inviteRetryAfter = new ConcurrentHashMap<>();\n"
-        "    private volatile Instant nextPendingRequestSweep = Instant.EPOCH;\n",
-        "sync fields",
-    )
+    if MARKER not in text:
+        text = replace_regex_once(
+            text,
+            r"(?m)^(public class FriendManager\s*\{\s*)$",
+            r"\1\n    // " + MARKER,
+            "overlay marker",
+        )
+        changed = True
 
-    text = replace_once(
-        text,
-        "Optional<FollowerResponse.Person> foundFriend = lastFriendCache.stream().filter(person -> person.xuid.equals(xuid)).findFirst();",
-        "Optional<FollowerResponse.Person> foundFriend = lastFriendCache().stream().filter(person -> person.xuid.equals(xuid)).findFirst();",
-        "null-safe removal cache",
+    # Make every direct cache access use the existing null-safe accessor.
+    replacements = (
+        ("lastFriendCache.stream()", "lastFriendCache().stream()"),
+        ("lastFriendCache.removeIf", "lastFriendCache().removeIf"),
     )
+    for old, new in replacements:
+        if old in text:
+            text = text.replace(old, new)
+            changed = True
 
-    remove_relationship = r'''
+    if "public void removeRelationship(String xuid)" not in text:
+        init_matches = list(
+            re.finditer(
+                r"(?m)^    public void init\(CoreConfig\.FriendSyncConfig friendSyncConfig\)\s*\{",
+                text,
+            )
+        )
+        if len(init_matches) != 1:
+            fail(f"removeRelationship insertion: expected one init method, found {len(init_matches)}")
+
+        block = r'''
     /**
-     * Remove both relationship directions for one XUID.
+     * Remove both Xbox relationship directions for one XUID.
      *
-     * <p>The incoming follower relationship is removed first so automatic follow
-     * cannot immediately queue the account again. A 404 is an idempotent success.</p>
+     * <p>HTTP 404 is treated as success because the requested relationship is
+     * already absent.</p>
      *
-     * @param xuid The XUID to remove
-     * @throws Exception If either Xbox Live request fails
+     * @param xuid numeric Xbox user ID
+     * @throws Exception if Xbox rejects either delete request
      */
     public void removeRelationship(String xuid) throws Exception {
-        if (xuid == null || xuid.isBlank() || xuid.chars().anyMatch(character -> character < '0' || character > '9')) {
+        if (xuid == null || xuid.isBlank()
+            || xuid.chars().anyMatch(character -> character < '0' || character > '9')) {
             throw new IllegalArgumentException("XUID must contain only digits");
         }
 
-        lastFriendCache();
         toAdd.remove(xuid);
         toRemove.remove(xuid);
-        clearFriendSyncCooldowns(xuid);
 
         HttpRequest followerDeleteRequest = HttpRequest.newBuilder()
             .uri(URI.create(Constants.FOLLOWER.formatted(xuid)))
@@ -118,7 +209,7 @@ def patch_friend_manager(path: Path) -> bool:
             followerDeleteRequest,
             HttpResponse.BodyHandlers.ofString()
         );
-        requireSuccessfulDelete("Follower relationship", followerResponse);
+        requireSuccessfulRelationshipDelete("Follower relationship", followerResponse);
 
         HttpRequest friendDeleteRequest = HttpRequest.newBuilder()
             .uri(URI.create(Constants.PEOPLE.formatted(xuid)))
@@ -129,267 +220,93 @@ def patch_friend_manager(path: Path) -> bool:
             friendDeleteRequest,
             HttpResponse.BodyHandlers.ofString()
         );
-        requireSuccessfulDelete("Outgoing friend relationship", friendResponse);
+        requireSuccessfulRelationshipDelete("Outgoing friend relationship", friendResponse);
 
         toAdd.remove(xuid);
         toRemove.remove(xuid);
         lastFriendCache().removeIf(person -> xuid.equals(person.xuid));
+
         try {
             sessionManager.storageManager().playerHistory().clear(xuid);
-        } catch (Exception e) {
+        } catch (Exception exception) {
             logger.warn(
                 "Removed Xbox friend relationships for XUID " + xuid
-                    + ", but local player history cleanup was deferred: " + e.getMessage()
+                    + ", but local player history cleanup was deferred: "
+                    + exception.getMessage()
             );
         }
     }
 
-    private void requireSuccessfulDelete(String operation, HttpResponse<String> response) {
+    private void requireSuccessfulRelationshipDelete(
+        String operation,
+        HttpResponse<String> response
+    ) {
         int status = response.statusCode();
         if ((status < 200 || status >= 300) && status != 404) {
-            throw new RuntimeException(operation + " removal failed with HTTP " + status + ": " + response.body());
+            throw new RuntimeException(
+                operation + " removal failed with HTTP " + status + ": " + response.body()
+            );
         }
     }
 
 '''
-    text = insert_before_once(
+        insertion = init_matches[0].start()
+        text = text[:insertion] + block + text[insertion:]
+        changed = True
+
+    # Keep forceUnfollow's official purpose, but make it null-safe and idempotent.
+    force_start, force_end = find_method_span(
         text,
-        "    public void init(CoreConfig.FriendSyncConfig friendSyncConfig) {",
-        remove_relationship,
-        "removeRelationship insertion",
+        r"(?m)^    public void forceUnfollow\(String xuid\) throws Exception\s*",
+        "forceUnfollow",
     )
-
-    # Startup acceptance now gets the same runtime/null guard used by recurring sweeps.
-    text = replace_once(
-        text,
-        "        // Accept any pending friend requests if enabled incase we got any while offline\n        acceptPendingFriendRequests();",
-        "        // Accept any pending friend requests if enabled in case we got any while offline.\n"
-        "        acceptPendingFriendRequestsSafely();",
-        "startup pending sweep",
-    )
-
-    text = replace_once(
-        text,
-        "                logger.info(\"Added \" + friend.get().gamertag + \" (\" + xuid + \") as a friend\");\n"
-        "                sendInvite(xuid);",
-        "                Instant acceptedAt = Instant.now();\n"
-        "                boolean repeated = isAutoFollowCoolingDown(xuid, acceptedAt);\n"
-        "                markAutoFollowAttempt(xuid, acceptedAt);\n"
-        "                if (repeated) {\n"
-        "                    logger.debug(\"Received request for \" + friend.get().gamertag + \" (\" + xuid + \") was already handled recently\");\n"
-        "                } else {\n"
-        "                    logger.info(\"Added \" + friend.get().gamertag + \" (\" + xuid + \") as a friend\");\n"
-        "                }\n"
-        "                sendInviteOnce(xuid);",
-        "pending acceptance cooldown",
-    )
-
-    helpers = r'''
-    private boolean isAutoFollowCoolingDown(String xuid, Instant now) {
-        Instant retryAt = autoFollowRetryAfter.get(xuid);
-        if (retryAt == null) {
-            return false;
-        }
-        if (!retryAt.isAfter(now)) {
-            autoFollowRetryAfter.remove(xuid, retryAt);
-            return false;
-        }
-        return true;
-    }
-
-    private void markAutoFollowAttempt(String xuid, Instant now) {
-        autoFollowRetryAfter.put(xuid, now.plusSeconds(AUTO_FOLLOW_COOLDOWN_SECONDS));
-    }
-
-    private void clearFriendSyncCooldowns(String xuid) {
-        autoFollowRetryAfter.remove(xuid);
-        inviteRetryAfter.remove(xuid);
-    }
-
-    private void sendInviteOnce(String xuid) {
-        Instant now = Instant.now();
-        Instant retryAt = inviteRetryAfter.get(xuid);
-        if (retryAt != null && retryAt.isAfter(now)) {
-            logger.debug("Skipping repeated initial invite for XUID " + xuid + " while cooldown is active");
-            return;
-        }
-        inviteRetryAfter.put(xuid, now.plusSeconds(INVITE_COOLDOWN_SECONDS));
-        sendInvite(xuid);
-    }
-
-    /**
-     * Run upstream's one-by-one pending-request implementation without rewriting it.
-     * This wrapper supplies overlap prevention, a five-minute sweep interval, and
-     * runtime/null safety while preserving future upstream protocol fixes.
-     */
-    private synchronized void acceptPendingFriendRequestsSafely() {
-        if (!shouldAcceptPendingRequests) {
-            return;
-        }
-
-        Instant now = Instant.now();
-        if (nextPendingRequestSweep.isAfter(now)) {
-            return;
-        }
-        nextPendingRequestSweep = now.plusSeconds(PENDING_SWEEP_COOLDOWN_SECONDS);
-
-        try {
-            acceptPendingFriendRequests();
-        } catch (RuntimeException e) {
-            logger.warn("Pending friend request processing failed safely and will retry later: " + e.getMessage());
-        }
-    }
-
-'''
-    text = insert_before_once(
-        text,
-        "    private void initAutoFriend(CoreConfig.FriendSyncConfig friendSyncConfig) {",
-        helpers,
-        "friend sync helpers",
-    )
-
-    # Patch only the small auto-follow portion inside initAutoFriend. The previous
-    # version matched the entire scheduled loop byte-for-byte, which was too
-    # brittle when upstream formatting or nearby comments changed.
-    method_start = text.find("    private void initAutoFriend(CoreConfig.FriendSyncConfig friendSyncConfig) {")
-    if method_start < 0:
-        fail("scheduled friend sync loop: initAutoFriend method not found")
-
-    method_end = text.find("    private boolean isGuestAccount(long xuid) {", method_start)
-    if method_end < 0:
-        fail("scheduled friend sync loop: isGuestAccount method anchor not found")
-
-    method_text = text[method_start:method_end]
-
-    loop_pattern = re.compile(
-        r"(?m)^(?P<indent>[ \t]*)for\s*\(\s*FollowerResponse\.Person\s+person\s*:\s*get\(\)\s*\)\s*\{"
-    )
-    loop_matches = list(loop_pattern.finditer(method_text))
-    if len(loop_matches) != 1:
-        fail(f"scheduled friend sync loop: expected one follower loop, found {len(loop_matches)}")
-
-    loop_match = loop_matches[0]
-    loop_indent = loop_match.group("indent")
-    loop_setup = (
-        f"{loop_indent}Instant now = Instant.now();\n"
-        f"{loop_indent}if (friendSyncConfig.autoFollow()) {{\n"
-        f"{loop_indent}    acceptPendingFriendRequestsSafely();\n"
-        f"{loop_indent}}}\n\n"
-    )
-    method_text = (
-        method_text[:loop_match.start()]
-        + loop_setup
-        + method_text[loop_match.start():]
-    )
-
-    auto_follow_pattern = re.compile(
-        r"(?m)^(?P<indent>[ \t]*)if\s*\(\s*friendSyncConfig\.autoFollow\(\)\s*&&\s*"
-        r"person\.isFollowingCaller\s*&&\s*!person\.isFollowedByCaller\s*\)\s*\{\s*\n"
-        r"(?P=indent)[ \t]+add\(person\.xuid,\s*person\.displayName\);\s*\n"
-        r"(?P=indent)\}"
-    )
-    auto_follow_matches = list(auto_follow_pattern.finditer(method_text))
-    if len(auto_follow_matches) != 1:
-        fail(
-            "scheduled friend sync loop: expected one upstream auto-follow block, "
-            f"found {len(auto_follow_matches)}"
-        )
-
-    auto_follow_match = auto_follow_matches[0]
-    indent = auto_follow_match.group("indent")
-    auto_follow_replacement = (
-        f"{indent}if (person.isFollowingCaller && person.isFollowedByCaller) {{\n"
-        f"{indent}    autoFollowRetryAfter.remove(person.xuid);\n"
-        f"{indent}}}\n\n"
-        f"{indent}// Follow the person back, without repeating the same Xbox request every sync pass.\n"
-        f"{indent}if (friendSyncConfig.autoFollow() && person.isFollowingCaller && !person.isFollowedByCaller) {{\n"
-        f"{indent}    if (!isAutoFollowCoolingDown(person.xuid, now)) {{\n"
-        f"{indent}        markAutoFollowAttempt(person.xuid, now);\n"
-        f"{indent}        add(person.xuid, person.displayName);\n"
-        f"{indent}    }}\n"
-        f"{indent}}}"
-    )
-    method_text = (
-        method_text[:auto_follow_match.start()]
-        + auto_follow_replacement
-        + method_text[auto_follow_match.end():]
-    )
-
-    text = text[:method_start] + method_text + text[method_end:]
-
-    text = replace_once(
-        text,
-        "                        logger.info(\"Added \" + entry.getValue() + \" (\" + entry.getKey() + \") as a friend\");\n"
-        "                        sendInvite(entry.getKey());",
-        "                        logger.info(\"Added \" + entry.getValue() + \" (\" + entry.getKey() + \") as a friend\");\n"
-        "                        sendInviteOnce(entry.getKey());",
-        "invite cooldown in add processor",
-    )
-
-    text = replace_once(
-        text,
-        "                        if (header.isPresent()) {\n"
-        "                            retryAfter = Integer.parseInt(header.get());\n"
-        "                        }\n"
-        "                        // Log the error",
-        "                        if (header.isPresent()) {\n"
-        "                            retryAfter = Integer.parseInt(header.get());\n"
-        "                        }\n"
-        "                        retryAfter = Math.max(retryAfter, 60);\n"
-        "                        // Log the error",
-        "rate-limit minimum",
-    )
-
-    force_pattern = re.compile(
-        r"    public void forceUnfollow\(String xuid\) throws Exception \{.*?\n    \}\n"
-        r"    /\*\*\n     \* Get the last friend cache",
-        re.DOTALL,
-    )
-    force_match = force_pattern.search(text)
-    if not force_match:
-        fail("forceUnfollow: method anchor not found")
-    replacement = r'''    public void forceUnfollow(String xuid) throws Exception {
+    force_replacement = r'''    public void forceUnfollow(String xuid) throws Exception {
         HttpRequest followerDeleteRequest = HttpRequest.newBuilder()
             .uri(URI.create(Constants.FOLLOWER.formatted(xuid)))
             .header("Authorization", sessionManager.getTokenHeader())
             .DELETE()
             .build();
-        HttpResponse<String> response = httpClient.send(followerDeleteRequest, HttpResponse.BodyHandlers.ofString());
-        requireSuccessfulDelete("Follower relationship", response);
+        HttpResponse<String> response = httpClient.send(
+            followerDeleteRequest,
+            HttpResponse.BodyHandlers.ofString()
+        );
+        requireSuccessfulRelationshipDelete("Follower relationship", response);
 
         lastFriendCache().removeIf(person -> xuid.equals(person.xuid));
         try {
             sessionManager.storageManager().playerHistory().clear(xuid);
-        } catch (Exception e) {
+        } catch (Exception exception) {
             logger.warn(
                 "Removed follower relationship for XUID " + xuid
-                    + ", but local player history cleanup was deferred: " + e.getMessage()
+                    + ", but local player history cleanup was deferred: "
+                    + exception.getMessage()
             );
         }
     }
-    /**
-     * Get the last friend cache'''
-    text = force_pattern.sub(replacement, text, count=1)
+'''
+    if text[force_start:force_end] != force_replacement:
+        text = text[:force_start] + force_replacement + text[force_end:]
+        changed = True
 
     path.write_text(text, encoding="utf-8")
     print(f"Patched: {path}")
-    return True
+    return changed
 
 
 def patch_logger(path: Path) -> bool:
     text = path.read_text(encoding="utf-8")
-    if "case \"friends\"" in text and "friends remove <xuid>" in text:
-        print(f"Already patched: {path}")
-        return False
+    changed = False
 
-    command_block = r'''                case "friends" -> {
+    if 'case "friends"' not in text:
+        command_block = r'''                case "friends" -> {
                     if (args.length != 2 || !args[0].equalsIgnoreCase("remove")) {
                         warn("Usage: friends remove <xuid>");
                         return;
                     }
 
                     String xuid = args[1];
-                    if (xuid.isEmpty() || xuid.chars().anyMatch(character -> character < '0' || character > '9')) {
+                    if (xuid.isEmpty()
+                        || xuid.chars().anyMatch(character -> character < '0' || character > '9')) {
                         warn("Invalid XUID '" + xuid + "'. XUIDs must contain only digits.");
                         return;
                     }
@@ -401,69 +318,85 @@ def patch_logger(path: Path) -> bool:
                         .filter(name -> name != null && !name.isBlank())
                         .findFirst()
                         .orElse(null);
-                    String target = "XUID " + xuid + (gamertag == null ? "" : " (" + gamertag + ")");
+                    String target = "XUID " + xuid
+                        + (gamertag == null ? "" : " (" + gamertag + ")");
 
                     info("Removing all friend relationships for " + target + "...");
                     try {
                         friendManager.removeRelationship(xuid);
                         info("Successfully removed all friend relationships for " + target + ".");
-                    } catch (Exception e) {
-                        error("Failed to remove all friend relationships for " + target + ".", e);
+                    } catch (Exception exception) {
+                        error("Failed to remove all friend relationships for " + target + ".", exception);
                     }
                 }
 '''
-    text = insert_before_once(
-        text,
-        "                case \"version\" -> info(\"MCXboxBroadcast Standalone \" + BuildData.VERSION);",
-        command_block,
-        "standalone friends command",
-    )
-    text = replace_once(
-        text,
-        "                    info(\"accounts remove <sub-session-id> - Remove a sub-account\");\n"
-        "                    info(\"version - Display the version\");",
-        "                    info(\"accounts remove <sub-session-id> - Remove a sub-account\");\n"
-        "                    info(\"friends remove <xuid> - Remove both friend relationship directions for an XUID\");\n"
-        "                    info(\"version - Display the version\");",
-        "standalone help entry",
-    )
+        version_matches = list(
+            re.finditer(r'(?m)^                case "version"\s*->', text)
+        )
+        if len(version_matches) != 1:
+            fail(f"standalone friends command: expected one version case, found {len(version_matches)}")
+        insertion = version_matches[0].start()
+        text = text[:insertion] + command_block + text[insertion:]
+        changed = True
+
+    help_line = '                    info("friends remove <xuid> - Remove both friend relationship directions for an XUID");\n'
+    if help_line not in text:
+        version_help_matches = list(
+            re.finditer(
+                r'(?m)^                    info\("version - Display the version"\);',
+                text,
+            )
+        )
+        if len(version_help_matches) != 1:
+            fail(f"standalone help entry: expected one version help line, found {len(version_help_matches)}")
+        insertion = version_help_matches[0].start()
+        text = text[:insertion] + help_line + text[insertion:]
+        changed = True
+
     path.write_text(text, encoding="utf-8")
     print(f"Patched: {path}")
-    return True
+    return changed
 
 
 def patch_readme(path: Path) -> bool:
+    """Document the command when a recognized command table exists, but never block a build."""
     text = path.read_text(encoding="utf-8")
-    row = "| `friends remove <xuid>` (Standalone Only) | Removes both friend relationship directions for an XUID |"
-    if row in text:
-        print(f"Already patched: {path}")
-        return False
-    text = replace_once(
-        text,
-        "| `accounts remove <sub-session-id>` | Removes an account from the list of accounts to use |",
-        "| `accounts remove <sub-session-id>` | Removes an account from the list of accounts to use |\n" + row,
-        "README command row",
+    row = (
+        "| `friends remove <xuid>` (Standalone Only) | "
+        "Removes both friend relationship directions for an XUID |"
     )
-    path.write_text(text, encoding="utf-8")
-    print(f"Patched: {path}")
-    return True
+    if row in text:
+        print(f"Already documented: {path}")
+        return False
+
+    account_row = (
+        "| `accounts remove <sub-session-id>` | "
+        "Removes an account from the list of accounts to use |"
+    )
+    if account_row in text:
+        text = text.replace(account_row, account_row + "\n" + row, 1)
+        path.write_text(text, encoding="utf-8")
+        print(f"Patched: {path}")
+        return True
+
+    print(f"README command table was not recognized; functional patch continues without README edit: {path}")
+    return False
 
 
 def validate(root: Path) -> None:
     friend = (root / FRIEND_PATH).read_text(encoding="utf-8")
     logger = (root / LOGGER_PATH).read_text(encoding="utf-8")
-    readme = (root / README_PATH).read_text(encoding="utf-8")
 
     required = {
-        "overlay marker": MARKER in friend,
-        "removeRelationship": "removeRelationship(String xuid)" in friend,
-        "safe pending wrapper": "acceptPendingFriendRequestsSafely()" in friend,
-        "upstream one-by-one acceptance": "friends/v2/xuid(\" + xuid + \"" in friend,
-        "accepted request invite cooldown": "sendInviteOnce(xuid);" in friend,
-        "upstream isFriend response": "friendRequestAcceptResponse.isFriend" in friend,
-        "no obsolete bulk endpoint": "bulk/users/me/people/friends/v2?method=add" not in friend,
-        "standalone command": 'case "friends"' in logger,
-        "README command": "friends remove <xuid>" in readme,
+        "V10 overlay marker": MARKER in friend,
+        "removeRelationship method": "removeRelationship(String xuid)" in friend,
+        "delete helper": "requireSuccessfulRelationshipDelete" in friend,
+        "null-safe cache": "lastFriendCache.stream()" not in friend,
+        "official one-by-one acceptance retained": 'friends/v2/xuid(" + xuid + ")' in friend,
+        "official isFriend response retained": "friendRequestAcceptResponse.isFriend" in friend,
+        "obsolete bulk endpoint absent": "bulk/users/me/people/friends/v2?method=add" not in friend,
+        "standalone friends command": 'case "friends"' in logger,
+        "standalone help entry": "friends remove <xuid>" in logger,
     }
     failed = [name for name, okay in required.items() if not okay]
     if failed:
@@ -476,14 +409,20 @@ def main() -> int:
     args = parser.parse_args()
     root = Path(args.root).resolve()
 
-    for relative in (FRIEND_PATH, LOGGER_PATH, README_PATH):
+    print(f"MCGateway semantic friend overlay patcher {PATCHER_VERSION}")
+
+    for relative in (FRIEND_PATH, LOGGER_PATH):
         if not (root / relative).is_file():
             fail(f"missing required file: {root / relative}")
 
     changed = False
     changed |= patch_friend_manager(root / FRIEND_PATH)
     changed |= patch_logger(root / LOGGER_PATH)
-    changed |= patch_readme(root / README_PATH)
+
+    readme_path = root / README_PATH
+    if readme_path.is_file():
+        changed |= patch_readme(readme_path)
+
     validate(root)
     print("PASS: future-compatible MCGateway friend overlay is present.")
     print("Changed files." if changed else "No changes were required.")
