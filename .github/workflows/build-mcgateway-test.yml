@@ -1,19 +1,21 @@
-name: Build MCGateway Test Image
+name: Build MCGateway Immutable Image
 
 on:
   workflow_dispatch:
     inputs:
+      release_tag:
+        description: Official MCXboxBroadcast release tag to build. Leave blank for latest.
+        required: false
+        type: string
+        default: ""
       force_rebuild:
-        description: Rebuild even if this release was already processed
+        description: Rebuild even if the immutable release image already exists
         required: false
         type: boolean
         default: false
 
-  schedule:
-    - cron: "7,17,27,37,47,57 * * * *"
-
 concurrency:
-  group: mcgateway-test-image-build
+  group: mcgateway-immutable-image-${{ inputs.release_tag || 'latest' }}
   cancel-in-progress: false
 
 permissions:
@@ -27,109 +29,62 @@ env:
   PATCH_SCRIPT: tools/apply_mcgateway_friend_patch.py
 
 jobs:
-  build-test-image:
+  build-release-image:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Find latest official MCXboxBroadcast release
+      - name: Resolve exact official release
         id: release
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
+          REQUESTED_RELEASE: ${{ inputs.release_tag }}
         run: |
           set -euo pipefail
 
+          REQUESTED="$(printf '%s' "${REQUESTED_RELEASE:-}" | xargs)"
+          if [[ -n "$REQUESTED" ]]; then
+            API_URL="https://api.github.com/repos/MCXboxBroadcast/Broadcaster/releases/tags/${REQUESTED}"
+          else
+            API_URL="https://api.github.com/repos/MCXboxBroadcast/Broadcaster/releases/latest"
+          fi
+
           RELEASE_JSON="$(
-            curl --fail --silent --show-error \
-              --location \
+            curl --fail --silent --show-error --location \
               --header "Accept: application/vnd.github+json" \
               --header "Authorization: Bearer ${GH_TOKEN}" \
               --header "X-GitHub-Api-Version: 2022-11-28" \
-              https://api.github.com/repos/MCXboxBroadcast/Broadcaster/releases/latest
+              "$API_URL"
           )"
 
-          RELEASE_TAG="$(
-            printf '%s' "$RELEASE_JSON" \
-              | jq -r '.tag_name // empty'
-          )"
-
+          RELEASE_TAG="$(printf '%s' "$RELEASE_JSON" | jq -r '.tag_name // empty')"
+          RELEASE_NAME="$(printf '%s' "$RELEASE_JSON" | jq -r '.name // empty')"
+          RELEASE_BODY="$(printf '%s' "$RELEASE_JSON" | jq -r '.body // empty')"
           if [[ -z "$RELEASE_TAG" ]]; then
-            echo "Could not determine the latest official release tag."
+            echo "Could not determine the official release tag."
             exit 1
           fi
 
-          SAFE_TAG="$(
-            printf '%s' "$RELEASE_TAG" \
-              | sed 's/[^A-Za-z0-9_.-]/-/g'
-          )"
-
-          BUILD_NUMBER="$(
-            printf '%s' "$RELEASE_TAG" \
-              | grep -oE '[0-9]+' \
-              | tail -n 1
-          )"
-
+          SAFE_TAG="$(printf '%s' "$RELEASE_TAG" | sed 's/[^A-Za-z0-9_.-]/-/g')"
+          BUILD_NUMBER="$(printf '%s' "$RELEASE_TAG" | grep -oE '[0-9]+' | tail -n 1 || true)"
           if [[ -z "$BUILD_NUMBER" ]]; then
             echo "Could not determine a numeric build number from: $RELEASE_TAG"
             exit 1
           fi
 
+          TARGET_MINECRAFT="$(printf '%s\n%s\n' "$RELEASE_NAME" "$RELEASE_BODY" | grep -oE '\b(1\.)?26\.[0-9]{1,3}(\.[0-9]{1,3})?\b' | head -n 1 | sed 's/^1\.//' || true)"
           IMMUTABLE_TAG="${IMAGE}:release-${SAFE_TAG}-unfollow"
 
           echo "release_tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
           echo "safe_tag=$SAFE_TAG" >> "$GITHUB_OUTPUT"
           echo "build_number=$BUILD_NUMBER" >> "$GITHUB_OUTPUT"
+          echo "target_minecraft=$TARGET_MINECRAFT" >> "$GITHUB_OUTPUT"
           echo "immutable_tag=$IMMUTABLE_TAG" >> "$GITHUB_OUTPUT"
-
           echo "IMMUTABLE_TAG=$IMMUTABLE_TAG" >> "$GITHUB_ENV"
 
-          echo "Latest official release: $RELEASE_TAG"
-          echo "Immutable image tag: $IMMUTABLE_TAG"
+          echo "Official release: $RELEASE_TAG"
+          echo "Target Minecraft: ${TARGET_MINECRAFT:-unknown}"
+          echo "Immutable image: $IMMUTABLE_TAG"
 
-      - name: Download exact official release source
-        uses: actions/checkout@v6
-        with:
-          repository: MCXboxBroadcast/Broadcaster
-          ref: ${{ steps.release.outputs.release_tag }}
-          fetch-depth: 0
-
-      - name: Apply future-compatible MCGateway friend overlay
-        id: patch
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          LOGGER_FILE="bootstrap/standalone/src/main/java/com/rtm516/mcxboxbroadcast/bootstrap/standalone/StandaloneLoggerImpl.java"
-          FRIEND_FILE="core/src/main/java/com/rtm516/mcxboxbroadcast/core/FriendManager.java"
-
-          if grep -Fq 'friends remove <xuid>' "$LOGGER_FILE" \
-            && grep -Fq 'removeRelationship(String xuid)' "$FRIEND_FILE"
-          then
-            echo "The official release already contains friend removal support."
-            echo "patch_mode=upstream" >> "$GITHUB_OUTPUT"
-          else
-            git remote add mcgateway-patch \
-              "https://github.com/${PATCH_REPOSITORY}.git"
-            git fetch \
-              --no-tags \
-              mcgateway-patch \
-              "${PATCH_BRANCH}"
-
-            git show \
-              "mcgateway-patch/${PATCH_BRANCH}:${PATCH_SCRIPT}" \
-              > /tmp/apply_mcgateway_friend_patch.py
-
-            python3 /tmp/apply_mcgateway_friend_patch.py .
-            echo "patch_mode=semantic-overlay" >> "$GITHUB_OUTPUT"
-          fi
-
-          git diff --check
-          grep -Fq 'friends remove <xuid>' "$LOGGER_FILE"
-          grep -Fq 'removeRelationship(String xuid)' "$FRIEND_FILE"
-          grep -Fq 'friends/v2/xuid(" + xuid + ")' "$FRIEND_FILE"
-          grep -Fq 'friendRequestAcceptResponse.isFriend' "$FRIEND_FILE"
-          ! grep -Fq 'bulk/users/me/people/friends/v2?method=add' "$FRIEND_FILE"
-          echo "Friend removal and resilient sync support confirmed."
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
 
@@ -140,30 +95,58 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Check whether this release was already built
+      - name: Check immutable image
         id: existing
         shell: bash
         env:
-          FORCE_REBUILD: ${{ github.event_name == 'workflow_dispatch' && inputs.force_rebuild || false }}
+          FORCE_REBUILD: ${{ inputs.force_rebuild }}
+        run: |
+          set -euo pipefail
+          if [[ "${FORCE_REBUILD:-false}" != "true" ]] \
+            && docker buildx imagetools inspect "$IMMUTABLE_TAG" >/dev/null 2>&1
+          then
+            echo "Immutable image already exists. Nothing will be rebuilt or retagged."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Download exact official release source
+        if: steps.existing.outputs.skip != 'true'
+        uses: actions/checkout@v6
+        with:
+          repository: MCXboxBroadcast/Broadcaster
+          ref: ${{ steps.release.outputs.release_tag }}
+          fetch-depth: 0
+
+      - name: Apply future-compatible MCGateway friend overlay
+        if: steps.existing.outputs.skip != 'true'
+        id: patch
+        shell: bash
         run: |
           set -euo pipefail
 
-          if [[ "$FORCE_REBUILD" == "true" ]]; then
-            echo "A forced rebuild was requested."
-            echo "skip=false" >> "$GITHUB_OUTPUT"
-            exit 0
+          LOGGER_FILE="bootstrap/standalone/src/main/java/com/rtm516/mcxboxbroadcast/bootstrap/standalone/StandaloneLoggerImpl.java"
+          FRIEND_FILE="core/src/main/java/com/rtm516/mcxboxbroadcast/core/FriendManager.java"
+          if grep -Fq 'friends remove <xuid>' "$LOGGER_FILE" \
+            && grep -Fq 'removeRelationship(String xuid)' "$FRIEND_FILE"
+          then
+            echo "Official release already contains friend-removal support."
+            echo "patch_mode=upstream" >> "$GITHUB_OUTPUT"
+          else
+            git remote add mcgateway-patch "https://github.com/${PATCH_REPOSITORY}.git"
+            git fetch --no-tags mcgateway-patch "${PATCH_BRANCH}"
+            git show "mcgateway-patch/${PATCH_BRANCH}:${PATCH_SCRIPT}" > /tmp/apply_mcgateway_friend_patch.py
+            python3 /tmp/apply_mcgateway_friend_patch.py .
+            echo "patch_mode=semantic-overlay" >> "$GITHUB_OUTPUT"
           fi
 
-          if docker buildx imagetools inspect \
-            "$IMMUTABLE_TAG" \
-            >/dev/null 2>&1
-          then
-            echo "This release was already built."
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "This is a new release."
-            echo "skip=false" >> "$GITHUB_OUTPUT"
-          fi
+          git diff --check
+          grep -Fq 'friends remove <xuid>' "$LOGGER_FILE"
+          grep -Fq 'removeRelationship(String xuid)' "$FRIEND_FILE"
+          grep -Fq 'friends/v2/xuid(" + xuid + ")' "$FRIEND_FILE"
+          grep -Fq 'friendRequestAcceptResponse.isFriend' "$FRIEND_FILE"
+          ! grep -Fq 'bulk/users/me/people/friends/v2?method=add' "$FRIEND_FILE"
 
       - name: Set up Java 17
         if: steps.existing.outputs.skip != 'true'
@@ -185,25 +168,14 @@ jobs:
       - name: Build patched Standalone JAR
         if: steps.existing.outputs.skip != 'true'
         shell: bash
-        env:
-          BUILD_NUMBER: ${{ steps.release.outputs.build_number }}
         run: |
           set -euo pipefail
-
           ./gradlew build
-
           JAR="bootstrap/standalone/build/libs/MCXboxBroadcastStandalone.jar"
-
-          if [[ ! -s "$JAR" ]]; then
-            echo "The Standalone JAR was not created."
-            exit 1
-          fi
-
+          [[ -s "$JAR" ]] || { echo "Standalone JAR was not created."; exit 1; }
           jar tf "$JAR" >/dev/null
 
-          echo "Patched Standalone JAR built successfully."
-
-      - name: Build and publish new test image
+      - name: Build and publish immutable image
         if: steps.existing.outputs.skip != 'true'
         uses: docker/build-push-action@v7
         with:
@@ -211,29 +183,17 @@ jobs:
           file: bootstrap/standalone/Dockerfile
           platforms: linux/amd64
           push: true
-          tags: |
-            ghcr.io/jaxdoesit/mcgateway-broadcast:test
-            ${{ env.IMMUTABLE_TAG }}
+          tags: ${{ env.IMMUTABLE_TAG }}
           labels: |
             org.opencontainers.image.source=https://github.com/JaxDoesIt/Broadcaster-unfollow
             org.opencontainers.image.description=MCXboxBroadcast with MCGateway friend removal support
             io.mcgateway.upstream-release=${{ steps.release.outputs.release_tag }}
             io.mcgateway.patch-mode=${{ steps.patch.outputs.patch_mode }}
+            io.mcgateway.target-minecraft=${{ steps.release.outputs.target_minecraft }}
 
-      - name: Point test tag to existing release image
-        if: steps.existing.outputs.skip == 'true'
+      - name: Verify immutable image
         shell: bash
         run: |
           set -euo pipefail
-
-          docker buildx imagetools create \
-            --tag ghcr.io/jaxdoesit/mcgateway-broadcast:test \
-            "$IMMUTABLE_TAG"
-
-      - name: Verify published test image
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          docker buildx imagetools inspect \
-            ghcr.io/jaxdoesit/mcgateway-broadcast:test
+          docker buildx imagetools inspect "$IMMUTABLE_TAG"
+          echo "Build complete. No live test/stable channel tag was changed."
