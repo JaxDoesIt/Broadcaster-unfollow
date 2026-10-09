@@ -9,10 +9,15 @@ on:
         type: string
         default: ""
       force_rebuild:
-        description: Rebuild even if the immutable release image already exists
+        description: Deprecated safety input; immutable image overwrite is refused
         required: false
         type: boolean
         default: false
+      image_variant:
+        description: Validated MCGateway overlay/image variant
+        required: false
+        type: string
+        default: "unfollow-v11"
 
 concurrency:
   group: mcgateway-immutable-image-${{ inputs.release_tag || 'latest' }}
@@ -25,8 +30,10 @@ permissions:
 env:
   IMAGE: ghcr.io/jaxdoesit/mcgateway-broadcast
   PATCH_REPOSITORY: JaxDoesIt/Broadcaster-unfollow
-  PATCH_BRANCH: friends-sync-null-safe-v5
+  PATCH_BRANCH: mcgateway/reliability-v11
   PATCH_SCRIPT: tools/apply_mcgateway_friend_patch.py
+  OVERLAY_VALIDATED_RELEASE: "154"
+  OVERLAY_IMAGE_VARIANT: "unfollow-v11"
 
 jobs:
   build-release-image:
@@ -38,6 +45,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           REQUESTED_RELEASE: ${{ inputs.release_tag }}
+          INPUT_IMAGE_VARIANT: ${{ inputs.image_variant }}
         run: |
           set -euo pipefail
 
@@ -63,6 +71,15 @@ jobs:
             echo "Could not determine the official release tag."
             exit 1
           fi
+          if [[ "$RELEASE_TAG" != "$OVERLAY_VALIDATED_RELEASE" ]]; then
+            echo "Refusing to apply the MCGateway reliability overlay to unvalidated release $RELEASE_TAG."
+            echo "Validated release: $OVERLAY_VALIDATED_RELEASE"
+            exit 1
+          fi
+          if [[ "${{ inputs.force_rebuild }}" == "true" ]]; then
+            echo "Refusing force_rebuild: immutable image tags are write-once. Use a new image_variant."
+            exit 1
+          fi
 
           SAFE_TAG="$(printf '%s' "$RELEASE_TAG" | sed 's/[^A-Za-z0-9_.-]/-/g')"
           BUILD_NUMBER="$(printf '%s' "$RELEASE_TAG" | grep -oE '[0-9]+' | tail -n 1 || true)"
@@ -72,7 +89,12 @@ jobs:
           fi
 
           TARGET_MINECRAFT="$(printf '%s\n%s\n' "$RELEASE_NAME" "$RELEASE_BODY" | grep -oE '\b(1\.)?26\.[0-9]{1,3}(\.[0-9]{1,3})?\b' | head -n 1 | sed 's/^1\.//' || true)"
-          IMMUTABLE_TAG="${IMAGE}:release-${SAFE_TAG}-unfollow"
+          REQUESTED_VARIANT="$(printf '%s' "${INPUT_IMAGE_VARIANT:-}" | xargs)"
+          if [[ "$REQUESTED_VARIANT" != "$OVERLAY_IMAGE_VARIANT" ]]; then
+            echo "Refusing unknown image variant: $REQUESTED_VARIANT"
+            exit 1
+          fi
+          IMMUTABLE_TAG="${IMAGE}:release-${SAFE_TAG}-${OVERLAY_IMAGE_VARIANT}"
 
           echo "release_tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
           echo "safe_tag=$SAFE_TAG" >> "$GITHUB_OUTPUT"
@@ -98,12 +120,9 @@ jobs:
       - name: Check immutable image
         id: existing
         shell: bash
-        env:
-          FORCE_REBUILD: ${{ inputs.force_rebuild }}
         run: |
           set -euo pipefail
-          if [[ "${FORCE_REBUILD:-false}" != "true" ]] \
-            && docker buildx imagetools inspect "$IMMUTABLE_TAG" >/dev/null 2>&1
+          if docker buildx imagetools inspect "$IMMUTABLE_TAG" >/dev/null 2>&1
           then
             echo "Immutable image already exists. Nothing will be rebuilt or retagged."
             echo "skip=true" >> "$GITHUB_OUTPUT"
@@ -119,7 +138,7 @@ jobs:
           ref: ${{ steps.release.outputs.release_tag }}
           fetch-depth: 0
 
-      - name: Apply future-compatible MCGateway friend overlay
+      - name: Apply bounded MCGateway reliability overlay
         if: steps.existing.outputs.skip != 'true'
         id: patch
         shell: bash
@@ -128,8 +147,15 @@ jobs:
 
           LOGGER_FILE="bootstrap/standalone/src/main/java/com/rtm516/mcxboxbroadcast/bootstrap/standalone/StandaloneLoggerImpl.java"
           FRIEND_FILE="core/src/main/java/com/rtm516/mcxboxbroadcast/core/FriendManager.java"
+          SESSION_FILE="core/src/main/java/com/rtm516/mcxboxbroadcast/core/SessionManager.java"
+          SESSION_CORE_FILE="core/src/main/java/com/rtm516/mcxboxbroadcast/core/SessionManagerCore.java"
+          REDIRECT_FILE="core/src/main/java/com/rtm516/mcxboxbroadcast/core/nethernet/RedirectPacketHandler.java"
           if grep -Fq 'friends remove <xuid>' "$LOGGER_FILE" \
-            && grep -Fq 'removeRelationship(String xuid)' "$FRIEND_FILE"
+            && grep -Fq 'removeRelationship(String xuid)' "$FRIEND_FILE" \
+            && grep -Fq 'Friends:' "$SESSION_FILE" \
+            && grep -Fq 'MCGATEWAY_JOIN_ATTEMPT_V1' "$SESSION_FILE" \
+            && grep -Fq 'MCGATEWAY_TRANSFER_SUCCESS_V1' "$REDIRECT_FILE" \
+            && grep -Fq 'MCGATEWAY_HEALTH_V1' "$SESSION_CORE_FILE"
           then
             echo "Official release already contains friend-removal support."
             echo "patch_mode=upstream" >> "$GITHUB_OUTPUT"
@@ -143,7 +169,12 @@ jobs:
 
           git diff --check
           grep -Fq 'friends remove <xuid>' "$LOGGER_FILE"
+          grep -Fq 'case "health"' "$LOGGER_FILE"
           grep -Fq 'removeRelationship(String xuid)' "$FRIEND_FILE"
+          grep -Fq 'SocialCounts socialCounts()' "$FRIEND_FILE"
+          grep -Fq 'MCGATEWAY_JOIN_ATTEMPT_V1' "$SESSION_FILE"
+          grep -Fq 'MCGATEWAY_TRANSFER_SUCCESS_V1' "$REDIRECT_FILE"
+          grep -Fq 'MCGATEWAY_HEALTH_V1' "$SESSION_CORE_FILE"
           grep -Fq 'friends/v2/xuid(" + xuid + ")' "$FRIEND_FILE"
           grep -Fq 'friendRequestAcceptResponse.isFriend' "$FRIEND_FILE"
           ! grep -Fq 'bulk/users/me/people/friends/v2?method=add' "$FRIEND_FILE"
@@ -186,8 +217,9 @@ jobs:
           tags: ${{ env.IMMUTABLE_TAG }}
           labels: |
             org.opencontainers.image.source=https://github.com/JaxDoesIt/Broadcaster-unfollow
-            org.opencontainers.image.description=MCXboxBroadcast with MCGateway friend removal support
+            org.opencontainers.image.description=MCXboxBroadcast with bounded MCGateway reliability overlay
             io.mcgateway.upstream-release=${{ steps.release.outputs.release_tag }}
+            io.mcgateway.overlay-variant=${{ inputs.image_variant }}
             io.mcgateway.patch-mode=${{ steps.patch.outputs.patch_mode }}
             io.mcgateway.target-minecraft=${{ steps.release.outputs.target_minecraft }}
 
