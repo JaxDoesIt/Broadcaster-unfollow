@@ -218,6 +218,7 @@ jobs:
             org.opencontainers.image.source=https://github.com/JaxDoesIt/Broadcaster-unfollow
             org.opencontainers.image.description=MCXboxBroadcast with bounded MCGateway reliability overlay
             io.mcgateway.upstream-release=${{ steps.release.outputs.release_tag }}
+            io.mcgateway.overlay-variant=${{ inputs.image_variant }}
             io.mcgateway.patch-mode=${{ steps.patch.outputs.patch_mode }}
             io.mcgateway.target-minecraft=${{ steps.release.outputs.target_minecraft }}
 
