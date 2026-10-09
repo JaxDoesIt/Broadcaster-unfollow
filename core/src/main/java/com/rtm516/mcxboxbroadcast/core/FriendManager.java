@@ -24,6 +24,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
@@ -39,6 +40,15 @@ public class FriendManager {
     private Future<?> internalScheduledFuture;
     private boolean initialInvite;
     private boolean shouldAcceptPendingRequests = true;
+
+    // Xbox can temporarily keep a relationship in the one-sided or pending
+    // state after a successful request. Without a cross-sync cooldown, every
+    // scheduled pass sends the same request and invite again.
+    private static final long AUTO_FOLLOW_COOLDOWN_SECONDS = TimeUnit.MINUTES.toSeconds(30);
+    private static final long INVITE_COOLDOWN_SECONDS = TimeUnit.HOURS.toSeconds(6);
+    private final Map<String, Instant> autoFollowRetryAfter = new ConcurrentHashMap<>();
+    private final Map<String, Instant> inviteRetryAfter = new ConcurrentHashMap<>();
+    private volatile Instant nextPendingRequestSweep = Instant.EPOCH;
 
     public FriendManager(HttpClient httpClient, Logger logger, SessionManagerCore sessionManager) {
         this.httpClient = httpClient;
@@ -188,7 +198,7 @@ public class FriendManager {
     public void remove(String xuid, String gamertag) {
         // Try and get the gamertag from the cache if it wasn't provided
         if (gamertag == null) {
-            Optional<FollowerResponse.Person> foundFriend = lastFriendCache.stream().filter(person -> person.xuid.equals(xuid)).findFirst();
+            Optional<FollowerResponse.Person> foundFriend = lastFriendCache().stream().filter(person -> person.xuid.equals(xuid)).findFirst();
             if (foundFriend.isPresent()) {
                 gamertag = foundFriend.get().gamertag;
             } else {
@@ -206,6 +216,84 @@ public class FriendManager {
         callInternalProcess();
     }
 
+    /**
+     * Remove both directions of the relationship for one XUID.
+     *
+     * <p>The follower relationship is removed first so auto-follow cannot immediately
+     * queue the user to be followed again. The outgoing friend relationship is then
+     * removed synchronously so callers can report the real result.</p>
+     *
+     * @param xuid The XUID to remove
+     * @throws Exception If either Xbox Live relationship request fails
+     */
+
+    public void removeRelationship(String xuid) throws Exception {
+        // Initialize the cache and cancel any pending automatic operation.
+        lastFriendCache();
+        toAdd.remove(xuid);
+        toRemove.remove(xuid);
+        clearFriendSyncCooldowns(xuid);
+
+        // Remove the incoming follower relationship first so auto-follow cannot
+        // queue the player again while this explicit cleanup is in progress.
+        HttpRequest followerDeleteRequest = HttpRequest.newBuilder()
+            .uri(URI.create(Constants.FOLLOWER.formatted(xuid)))
+            .header("Authorization", sessionManager.getTokenHeader())
+            .DELETE()
+            .build();
+
+        HttpResponse<String> followerResponse = httpClient.send(
+            followerDeleteRequest,
+            HttpResponse.BodyHandlers.ofString()
+        );
+
+        int followerStatus = followerResponse.statusCode();
+        if ((followerStatus < 200 || followerStatus >= 300) && followerStatus != 404) {
+            throw new RuntimeException(
+                "Follower relationship removal failed with HTTP "
+                    + followerStatus + ": " + followerResponse.body()
+            );
+        }
+
+        // Remove the outgoing friend relationship. A 404 is treated as an
+        // idempotent success because an earlier attempt may already have
+        // removed this direction before a local cache cleanup failed.
+        HttpRequest friendDeleteRequest = HttpRequest.newBuilder()
+            .uri(URI.create(Constants.PEOPLE.formatted(xuid)))
+            .header("Authorization", sessionManager.getTokenHeader())
+            .DELETE()
+            .build();
+
+        HttpResponse<String> friendResponse = httpClient.send(
+            friendDeleteRequest,
+            HttpResponse.BodyHandlers.ofString()
+        );
+
+        int friendStatus = friendResponse.statusCode();
+        if ((friendStatus < 200 || friendStatus >= 300) && friendStatus != 404) {
+            throw new RuntimeException(
+                "Outgoing friend relationship removal failed with HTTP "
+                    + friendStatus + ": " + friendResponse.body()
+            );
+        }
+
+        // Xbox relationship deletion is the authoritative operation. Local
+        // history cleanup is best-effort and must never turn a successful Xbox
+        // removal into a failed command because SQLite is temporarily busy.
+        toAdd.remove(xuid);
+        toRemove.remove(xuid);
+        lastFriendCache().removeIf(person -> person.xuid.equals(xuid));
+
+        try {
+            sessionManager.storageManager().playerHistory().clear(xuid);
+        } catch (Exception e) {
+            logger.warn(
+                "Removed Xbox friend relationships for XUID " + xuid
+                    + ", but local player history cleanup was deferred: "
+                    + e.getMessage()
+            );
+        }
+    }
     public void init(CoreConfig.FriendSyncConfig friendSyncConfig) {
         shouldAcceptPendingRequests = friendSyncConfig.autoFollow();
 
@@ -283,20 +371,72 @@ public class FriendManager {
      *
      * @param friendSyncConfig The config to use for the auto friend sync
      */
+    private boolean isAutoFollowCoolingDown(String xuid, Instant now) {
+        Instant retryAt = autoFollowRetryAfter.get(xuid);
+        if (retryAt == null) {
+            return false;
+        }
+        if (!retryAt.isAfter(now)) {
+            autoFollowRetryAfter.remove(xuid, retryAt);
+            return false;
+        }
+        return true;
+    }
+
+    private void markAutoFollowAttempt(String xuid, Instant now) {
+        autoFollowRetryAfter.put(xuid, now.plusSeconds(AUTO_FOLLOW_COOLDOWN_SECONDS));
+    }
+
+    private void clearFriendSyncCooldowns(String xuid) {
+        autoFollowRetryAfter.remove(xuid);
+        inviteRetryAfter.remove(xuid);
+    }
+
+    private void sendInviteOnce(String xuid) {
+        Instant now = Instant.now();
+        Instant retryAt = inviteRetryAfter.get(xuid);
+        if (retryAt != null && retryAt.isAfter(now)) {
+            logger.debug("Skipping repeated initial invite for XUID " + xuid + " while cooldown is active");
+            return;
+        }
+        inviteRetryAfter.put(xuid, now.plusSeconds(INVITE_COOLDOWN_SECONDS));
+        sendInvite(xuid);
+    }
+
     private void initAutoFriend(CoreConfig.FriendSyncConfig friendSyncConfig) {
         this.initialInvite = friendSyncConfig.initialInvite();
         if (friendSyncConfig.autoFollow() || friendSyncConfig.autoUnfollow()) {
             sessionManager.scheduledThread().scheduleWithFixedDelay(() -> {
                 try {
+                    Instant now = Instant.now();
+
+                    // The explicit received-request endpoint is the safest way
+                    // to settle Xbox's newer pending friend-request state. The
+                    // old implementation only called it once during startup.
+                    if (friendSyncConfig.autoFollow()) {
+                        acceptPendingFriendRequests();
+                    }
+
                     for (FollowerResponse.Person person : get()) {
                         // Make sure we are not targeting a subaccount (eg: split screen)
                         if (isGuestAccount(person.xuid)) {
                             continue;
                         }
 
-                        // Follow the person back
+                        // A confirmed mutual relationship clears any pending
+                        // auto-follow retry state immediately.
+                        if (person.isFollowingCaller && person.isFollowedByCaller) {
+                            autoFollowRetryAfter.remove(person.xuid);
+                        }
+
+                        // Follow the person back, but never resend the same
+                        // request every sync pass while Xbox still reports it
+                        // as one-sided or pending.
                         if (friendSyncConfig.autoFollow() && person.isFollowingCaller && !person.isFollowedByCaller) {
-                            add(person.xuid, person.displayName);
+                            if (!isAutoFollowCoolingDown(person.xuid, now)) {
+                                markAutoFollowAttempt(person.xuid, now);
+                                add(person.xuid, person.displayName);
+                            }
                         }
 
                         // Unfollow the person
@@ -373,7 +513,7 @@ public class FriendManager {
 
                         // Let the user know we added a friend
                         logger.info("Added " + entry.getValue() + " (" + entry.getKey() + ") as a friend");
-                        sendInvite(entry.getKey());
+                        sendInviteOnce(entry.getKey());
 
                         // Update the user in the cache
                         Optional<FollowerResponse.Person> friend = lastFriendCache.stream().filter(p -> p.xuid.equals(entry.getKey())).findFirst();
@@ -384,6 +524,7 @@ public class FriendManager {
                         if (header.isPresent()) {
                             retryAfter = Integer.parseInt(header.get());
                         }
+                        retryAfter = Math.max(retryAfter, 60);
 
                         // Log the error
                         logger.debug("Failed to add " + entry.getValue() + " (" + entry.getKey() + ") as a friend: (" + response.statusCode() + ") " + response.body());
@@ -495,6 +636,7 @@ public class FriendManager {
      *
      * @param xuid The XUID of the user to target
      */
+
     public void forceUnfollow(String xuid) throws Exception {
         HttpRequest followerDeleteRequest = HttpRequest.newBuilder()
             .uri(URI.create(Constants.FOLLOWER.formatted(xuid)))
@@ -502,14 +644,26 @@ public class FriendManager {
             .DELETE()
             .build();
 
-        HttpResponse<String> response = httpClient.send(followerDeleteRequest, HttpResponse.BodyHandlers.ofString());
-        if (response.statusCode() == 204) {
-            // Remove the user from the cache
-            lastFriendCache.removeIf(person -> person.xuid.equals(xuid));
+        HttpResponse<String> response = httpClient.send(
+            followerDeleteRequest,
+            HttpResponse.BodyHandlers.ofString()
+        );
 
+        int status = response.statusCode();
+        if ((status < 200 || status >= 300) && status != 404) {
+            throw new RuntimeException(status + ": " + response.body());
+        }
+
+        lastFriendCache().removeIf(person -> person.xuid.equals(xuid));
+
+        try {
             sessionManager.storageManager().playerHistory().clear(xuid);
-        } else {
-            throw new RuntimeException(response.statusCode() + ": " + response.body());
+        } catch (Exception e) {
+            logger.warn(
+                "Removed follower relationship for XUID " + xuid
+                    + ", but local player history cleanup was deferred: "
+                    + e.getMessage()
+            );
         }
     }
 
@@ -533,13 +687,20 @@ public class FriendManager {
         return lastFriendCache;
     }
 
-    public void acceptPendingFriendRequests() {
+
+    public synchronized void acceptPendingFriendRequests() {
         if (!shouldAcceptPendingRequests) {
             return;
         }
 
+        Instant now = Instant.now();
+        if (nextPendingRequestSweep.isAfter(now)) {
+            return;
+        }
+
+        nextPendingRequestSweep = now.plusSeconds(TimeUnit.MINUTES.toSeconds(5));
+
         try {
-            // Get the pending friend requests
             HttpRequest friendRequests = HttpRequest.newBuilder()
                 .uri(URI.create("https://peoplehub.xboxlive.com/users/me/people/friendrequests(received)"))
                 .header("Authorization", sessionManager.getTokenHeader())
@@ -548,49 +709,121 @@ public class FriendManager {
                 .GET()
                 .build();
 
-            // Parse and extract the xuids
-            HttpResponse<String> response = httpClient.send(friendRequests, HttpResponse.BodyHandlers.ofString());
-            FriendRequestResponse friendRequestResponse = Constants.GSON.fromJson(response.body(), FriendRequestResponse.class);
+            HttpResponse<String> response = httpClient.send(
+                friendRequests,
+                HttpResponse.BodyHandlers.ofString()
+            );
 
-            // We got no pending friend requests returned
-            if (friendRequestResponse.people == null) {
+            int responseStatus = response.statusCode();
+            String responseBody = response.body() == null ? "" : response.body();
+
+            if (responseStatus == 429) {
+                nextPendingRequestSweep = Instant.now().plusSeconds(TimeUnit.MINUTES.toSeconds(15));
+                logger.warn("Rate limited while checking pending friend requests; waiting before retrying");
                 return;
             }
 
-            List<String> xuids = friendRequestResponse.people.stream().map(person -> person.xuid).collect(Collectors.toUnmodifiableList());
-
-            // Don't try and accept if there are no requests
-            if (xuids.isEmpty()) {
+            if (responseStatus < 200 || responseStatus >= 300) {
+                logger.warn("Failed to get pending friend requests: HTTP " + responseStatus + " " + responseBody);
                 return;
             }
 
-            // Accept the friend requests
+            if (responseBody.isBlank()) {
+                logger.debug("Pending friend request lookup returned an empty response");
+                return;
+            }
+
+            FriendRequestResponse friendRequestResponse = Constants.GSON.fromJson(
+                responseBody,
+                FriendRequestResponse.class
+            );
+
+            if (
+                friendRequestResponse == null
+                    || friendRequestResponse.people == null
+                    || friendRequestResponse.people.isEmpty()
+            ) {
+                return;
+            }
+
+            List<String> xuids = friendRequestResponse.people.stream()
+                .map(person -> person.xuid)
+                .collect(Collectors.toUnmodifiableList());
+
             HttpRequest acceptRequests = HttpRequest.newBuilder()
                 .uri(URI.create("https://social.xboxlive.com/bulk/users/me/people/friends/v2?method=add"))
                 .header("Authorization", sessionManager.getTokenHeader())
                 .POST(HttpRequest.BodyPublishers.ofString(Constants.GSON.toJson(Map.of("xuids", xuids))))
                 .build();
 
-            // Parse the response
-            HttpResponse<String> acceptResponse = httpClient.send(acceptRequests, HttpResponse.BodyHandlers.ofString());
-            FriendRequestAcceptResponse friendRequestAcceptResponse = Constants.GSON.fromJson(acceptResponse.body(), FriendRequestAcceptResponse.class);
+            HttpResponse<String> acceptResponse = httpClient.send(
+                acceptRequests,
+                HttpResponse.BodyHandlers.ofString()
+            );
 
-            // If we don't have any updated people then we don't need to do anything else
-            if (friendRequestAcceptResponse.updatedPeople == null) {
+            int acceptStatus = acceptResponse.statusCode();
+            String acceptBody = acceptResponse.body() == null ? "" : acceptResponse.body();
+
+            if (acceptStatus == 429) {
+                nextPendingRequestSweep = Instant.now().plusSeconds(TimeUnit.MINUTES.toSeconds(15));
+                logger.warn("Rate limited while accepting pending friend requests; waiting before retrying");
                 return;
             }
 
-            // Let the user know we accepted the friend requests
+            if (acceptStatus < 200 || acceptStatus >= 300) {
+                logger.warn("Failed to accept pending friend requests: HTTP " + acceptStatus + " " + acceptBody);
+                return;
+            }
+
+            if (acceptBody.isBlank()) {
+                logger.debug("Pending friend request acceptance returned an empty response; leaving the requests for a later retry");
+                return;
+            }
+
+            FriendRequestAcceptResponse friendRequestAcceptResponse = Constants.GSON.fromJson(
+                acceptBody,
+                FriendRequestAcceptResponse.class
+            );
+
+            if (
+                friendRequestAcceptResponse == null
+                    || friendRequestAcceptResponse.updatedPeople == null
+                    || friendRequestAcceptResponse.updatedPeople.isEmpty()
+            ) {
+                logger.debug("Pending friend request acceptance returned no updated people");
+                return;
+            }
+
             for (String xuid : friendRequestAcceptResponse.updatedPeople) {
-                Optional<FollowerResponse.Person> friend = friendRequestResponse.people.stream().filter(p -> p.xuid.equals(xuid)).findFirst();
+                Optional<FollowerResponse.Person> friend = friendRequestResponse.people.stream()
+                    .filter(person -> person.xuid.equals(xuid))
+                    .findFirst();
+
                 if (friend.isEmpty()) {
                     continue;
                 }
-                logger.info("Added " + friend.get().gamertag + " (" + xuid + ") as a friend");
-                sendInvite(xuid);
+
+                Instant acceptedAt = Instant.now();
+                boolean repeated = isAutoFollowCoolingDown(xuid, acceptedAt);
+                markAutoFollowAttempt(xuid, acceptedAt);
+
+                if (repeated) {
+                    logger.debug("Received request for " + friend.get().gamertag + " (" + xuid + ") was already handled recently");
+                } else {
+                    logger.info("Added " + friend.get().gamertag + " (" + xuid + ") as a friend");
+                }
+
+                sendInviteOnce(xuid);
             }
-        } catch (IOException | InterruptedException e) {
+        } catch (JsonParseException e) {
+            logger.warn("Failed to parse Xbox pending friend request response: " + e.getMessage());
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            logger.error("Pending friend request processing was interrupted", e);
+        } catch (IOException e) {
             logger.error("Failed to accept friend requests", e);
+        } catch (RuntimeException e) {
+            logger.error("Unexpected failure while processing pending friend requests", e);
         }
     }
 
