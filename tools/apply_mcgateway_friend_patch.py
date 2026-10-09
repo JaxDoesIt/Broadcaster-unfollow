@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""Apply the MCGateway friend-removal overlay to current MCXboxBroadcast source.
+"""Apply the bounded MCGateway reliability overlay to MCXboxBroadcast release 154.
 
-V10 intentionally avoids rewriting upstream friend synchronization, pending-request
-acceptance, retry scheduling, or rate-limit handling. It adds only the standalone
-friends remove command, a two-direction relationship removal method, and null-safe
-cache access. This keeps official release logic intact and greatly reduces future
-merge breakage.
+V11 intentionally avoids rewriting upstream authentication, NetherNet, session
+recovery, friend synchronization, pending-request acceptance, retry scheduling, or
+rate-limit behavior. It adds only exact social-count/status output, structured join
+and transfer evidence, the standalone friends remove command, and null-safe cache
+access. This keeps official release logic intact and makes Control Bot decisions
+observable without changing the connection engine.
 """
 
 from __future__ import annotations
@@ -17,13 +18,18 @@ from pathlib import Path
 from typing import NoReturn
 
 FRIEND_PATH = Path("core/src/main/java/com/rtm516/mcxboxbroadcast/core/FriendManager.java")
+SESSION_MANAGER_PATH = Path("core/src/main/java/com/rtm516/mcxboxbroadcast/core/SessionManager.java")
+SESSION_CORE_PATH = Path("core/src/main/java/com/rtm516/mcxboxbroadcast/core/SessionManagerCore.java")
+REDIRECT_HANDLER_PATH = Path(
+    "core/src/main/java/com/rtm516/mcxboxbroadcast/core/nethernet/RedirectPacketHandler.java"
+)
 LOGGER_PATH = Path(
     "bootstrap/standalone/src/main/java/com/rtm516/mcxboxbroadcast/bootstrap/standalone/StandaloneLoggerImpl.java"
 )
 README_PATH = Path("README.md")
 
-MARKER = "MCGATEWAY_FRIEND_SYNC_OVERLAY_V10"
-PATCHER_VERSION = "V10"
+MARKER = "MCGATEWAY_RELIABILITY_OVERLAY_V11"
+PATCHER_VERSION = "V11"
 
 
 def fail(message: str) -> NoReturn:
@@ -127,7 +133,11 @@ def find_method_span(text: str, signature_pattern: str, label: str) -> tuple[int
 
 def patch_friend_manager(path: Path) -> bool:
     text = path.read_text(encoding="utf-8")
-    if MARKER in text and "removeRelationship(String xuid)" in text:
+    if (
+        MARKER in text
+        and "removeRelationship(String xuid)" in text
+        and "SocialCounts socialCounts()" in text
+    ):
         print(f"Already patched: {path}")
         return False
 
@@ -170,6 +180,45 @@ def patch_friend_manager(path: Path) -> bool:
         if old in text:
             text = text.replace(old, new)
             changed = True
+
+    if "SocialCounts socialCounts()" not in text:
+        init_matches = list(
+            re.finditer(
+                r"(?m)^    public void init\(CoreConfig\.FriendSyncConfig friendSyncConfig\)\s*\{",
+                text,
+            )
+        )
+        if len(init_matches) != 1:
+            fail(f"socialCounts insertion: expected one init method, found {len(init_matches)}")
+
+        social_block = r'''
+    /** Exact Xbox relationship counts from one merged, XUID-deduplicated snapshot. */
+    public record SocialCounts(int friends, int following, int followers) { }
+
+    public SocialCounts socialCounts() throws XboxFriendsException {
+        int friends = 0;
+        int following = 0;
+        int followers = 0;
+
+        for (FollowerResponse.Person person : get()) {
+            if (person.isFollowedByCaller) {
+                following++;
+            }
+            if (person.isFollowingCaller) {
+                followers++;
+            }
+            if (person.isFollowedByCaller && person.isFollowingCaller) {
+                friends++;
+            }
+        }
+
+        return new SocialCounts(friends, following, followers);
+    }
+
+'''
+        insertion = init_matches[0].start()
+        text = text[:insertion] + social_block + text[insertion:]
+        changed = True
 
     if "public void removeRelationship(String xuid)" not in text:
         init_matches = list(
@@ -293,6 +342,119 @@ def patch_friend_manager(path: Path) -> bool:
     return changed
 
 
+def patch_session_manager(path: Path) -> bool:
+    text = path.read_text(encoding="utf-8")
+    changed = False
+
+    attempt_line = '                    logger.info("MCGATEWAY_JOIN_ATTEMPT_V1 xuid=" + xuid);\n'
+    if attempt_line not in text:
+        anchor = '                    logger.debug("Generated nonce for XUID " + xuid + ": " + hex);\n'
+        if text.count(anchor) != 1:
+            fail(f"{path}: structured join-attempt anchor count was {text.count(anchor)}, expected 1")
+        text = text.replace(anchor, anchor + attempt_line, 1)
+        changed = True
+
+    if "appendSocialCounts(List<String> messages" not in text:
+        start, end = find_method_span(
+            text,
+            r"(?m)^    public void listSessions\(\)\s*",
+            "listSessions",
+        )
+        replacement = r'''    public void listSessions() {
+        List<String> messages = new ArrayList<>();
+        coreLogger.info("Loading status of sessions...");
+
+        messages.add("Primary Session:");
+        messages.add(" - Gamertag: " + getGamertag());
+        appendSocialCounts(messages, friendManager());
+
+        if (!subSessionManagers.isEmpty()) {
+            messages.add("Sub-sessions: (" + subSessionManagers.size() + ")");
+            for (Map.Entry<String, SubSessionManager> subSession : subSessionManagers.entrySet()) {
+                messages.add(" - ID: " + subSession.getKey());
+                messages.add("   Gamertag: " + subSession.getValue().getGamertag());
+                appendSocialCounts(messages, subSession.getValue().friendManager());
+            }
+        } else {
+            messages.add("No sub-sessions");
+        }
+
+        for (String message : messages) {
+            coreLogger.info(message);
+        }
+    }
+
+    private void appendSocialCounts(List<String> messages, FriendManager manager) {
+        try {
+            FriendManager.SocialCounts counts = manager.socialCounts();
+            messages.add("   Friends: " + counts.friends() + "/" + Constants.MAX_FRIENDS);
+            messages.add("   Followers: " + counts.followers());
+            messages.add("   Following: " + counts.following());
+        } catch (Exception exception) {
+            messages.add("   Friends: unavailable");
+            messages.add("   Followers: unavailable");
+            messages.add("   Following: unavailable");
+            logger.warn("Unable to load exact Xbox social counts: " + exception.getMessage());
+        }
+    }
+'''
+        text = text[:start] + replacement + text[end:]
+        changed = True
+
+    path.write_text(text, encoding="utf-8")
+    print(f"Patched: {path}")
+    return changed
+
+
+def patch_session_core(path: Path) -> bool:
+    text = path.read_text(encoding="utf-8")
+    if "public String mcgatewayHealthLine()" in text:
+        print(f"Already patched: {path}")
+        return False
+
+    anchor = '''    public Logger logger() {
+        return logger;
+    }
+'''
+    if text.count(anchor) != 1:
+        fail(f"{path}: health-status anchor count was {text.count(anchor)}, expected 1")
+    block = anchor + r'''
+
+    /** A read-only machine-readable snapshot for the external fleet supervisor. */
+    public String mcgatewayHealthLine() {
+        boolean rtaOpen = rtaWebsocket != null && rtaWebsocket.isOpen();
+        boolean netherNetOpen = netherNetChannel != null && netherNetChannel.isOpen();
+        boolean sessionPublished = sessionInfo != null
+            && sessionInfo.getHandleId() != null
+            && !sessionInfo.getHandleId().isBlank();
+        return "MCGATEWAY_HEALTH_V1 initialized=" + initialized
+            + " rta=" + rtaOpen
+            + " nethernet=" + netherNetOpen
+            + " published=" + sessionPublished;
+    }
+'''
+    text = text.replace(anchor, block, 1)
+    path.write_text(text, encoding="utf-8")
+    print(f"Patched: {path}")
+    return True
+
+
+def patch_redirect_handler(path: Path) -> bool:
+    text = path.read_text(encoding="utf-8")
+    success_line = '                sessionManager.logger().info("MCGATEWAY_TRANSFER_SUCCESS_V1 xuid=" + identityData.xuid);\n'
+    if success_line in text:
+        print(f"Already patched: {path}")
+        return False
+
+    anchor = '                sessionManager.logger().info("Transferred bedrock client " + identityData.displayName + " (" + identityData.xuid + ") to target server.");\n'
+    if text.count(anchor) != 1:
+        fail(f"{path}: structured transfer-success anchor count was {text.count(anchor)}, expected 1")
+    text = text.replace(anchor, anchor + success_line, 1)
+    path.write_text(text, encoding="utf-8")
+    print(f"Patched: {path}")
+    return True
+
+
 def patch_logger(path: Path) -> bool:
     text = path.read_text(encoding="utf-8")
     changed = False
@@ -339,6 +501,15 @@ def patch_logger(path: Path) -> bool:
         text = text[:insertion] + command_block + text[insertion:]
         changed = True
 
+    if 'case "health" -> info(StandaloneMain.sessionManager.mcgatewayHealthLine());' not in text:
+        health_line = '                case "health" -> info(StandaloneMain.sessionManager.mcgatewayHealthLine());\n'
+        version_matches = list(re.finditer(r'(?m)^                case "version"\s*->', text))
+        if len(version_matches) != 1:
+            fail(f"standalone health command: expected one version case, found {len(version_matches)}")
+        insertion = version_matches[0].start()
+        text = text[:insertion] + health_line + text[insertion:]
+        changed = True
+
     help_line = '                    info("friends remove <xuid> - Remove both friend relationship directions for an XUID");\n'
     if help_line not in text:
         version_help_matches = list(
@@ -353,6 +524,20 @@ def patch_logger(path: Path) -> bool:
         text = text[:insertion] + help_line + text[insertion:]
         changed = True
 
+    health_help = '                    info("health - Print MCGateway machine-readable readiness");\n'
+    if health_help not in text:
+        version_help_matches = list(
+            re.finditer(
+                r'(?m)^                    info\("version - Display the version"\);',
+                text,
+            )
+        )
+        if len(version_help_matches) != 1:
+            fail(f"standalone health help: expected one version help line, found {len(version_help_matches)}")
+        insertion = version_help_matches[0].start()
+        text = text[:insertion] + health_help + text[insertion:]
+        changed = True
+
     path.write_text(text, encoding="utf-8")
     print(f"Patched: {path}")
     return changed
@@ -365,7 +550,11 @@ def patch_readme(path: Path) -> bool:
         "| `friends remove <xuid>` (Standalone Only) | "
         "Removes both friend relationship directions for an XUID |"
     )
-    if row in text:
+    health_row = (
+        "| `health` (Standalone Only) | "
+        "Prints the machine-readable MCGateway readiness snapshot |"
+    )
+    if row in text and health_row in text:
         print(f"Already documented: {path}")
         return False
 
@@ -374,7 +563,8 @@ def patch_readme(path: Path) -> bool:
         "Removes an account from the list of accounts to use |"
     )
     if account_row in text:
-        text = text.replace(account_row, account_row + "\n" + row, 1)
+        additions = [item for item in (row, health_row) if item not in text]
+        text = text.replace(account_row, account_row + "\n" + "\n".join(additions), 1)
         path.write_text(text, encoding="utf-8")
         print(f"Patched: {path}")
         return True
@@ -385,18 +575,29 @@ def patch_readme(path: Path) -> bool:
 
 def validate(root: Path) -> None:
     friend = (root / FRIEND_PATH).read_text(encoding="utf-8")
+    session = (root / SESSION_MANAGER_PATH).read_text(encoding="utf-8")
+    session_core = (root / SESSION_CORE_PATH).read_text(encoding="utf-8")
+    redirect = (root / REDIRECT_HANDLER_PATH).read_text(encoding="utf-8")
     logger = (root / LOGGER_PATH).read_text(encoding="utf-8")
 
     required = {
-        "V10 overlay marker": MARKER in friend,
+        "V11 overlay marker": MARKER in friend,
         "removeRelationship method": "removeRelationship(String xuid)" in friend,
         "delete helper": "requireSuccessfulRelationshipDelete" in friend,
         "null-safe cache": "lastFriendCache.stream()" not in friend,
+        "exact social counts": "SocialCounts socialCounts()" in friend,
+        "exact friends output": 'messages.add("   Friends: " + counts.friends()' in session,
+        "followers output": 'messages.add("   Followers: " + counts.followers())' in session,
+        "following output": 'messages.add("   Following: " + counts.following())' in session,
+        "structured join attempt": "MCGATEWAY_JOIN_ATTEMPT_V1 xuid=" in session,
+        "machine-readable readiness": "MCGATEWAY_HEALTH_V1 initialized=" in session_core,
+        "structured transfer success": "MCGATEWAY_TRANSFER_SUCCESS_V1 xuid=" in redirect,
         "official one-by-one acceptance retained": 'friends/v2/xuid(" + xuid + ")' in friend,
         "official isFriend response retained": "friendRequestAcceptResponse.isFriend" in friend,
         "obsolete bulk endpoint absent": "bulk/users/me/people/friends/v2?method=add" not in friend,
         "standalone friends command": 'case "friends"' in logger,
         "standalone help entry": "friends remove <xuid>" in logger,
+        "standalone health command": 'case "health"' in logger,
     }
     failed = [name for name, okay in required.items() if not okay]
     if failed:
@@ -411,12 +612,21 @@ def main() -> int:
 
     print(f"MCGateway semantic friend overlay patcher {PATCHER_VERSION}")
 
-    for relative in (FRIEND_PATH, LOGGER_PATH):
+    for relative in (
+        FRIEND_PATH,
+        SESSION_MANAGER_PATH,
+        SESSION_CORE_PATH,
+        REDIRECT_HANDLER_PATH,
+        LOGGER_PATH,
+    ):
         if not (root / relative).is_file():
             fail(f"missing required file: {root / relative}")
 
     changed = False
     changed |= patch_friend_manager(root / FRIEND_PATH)
+    changed |= patch_session_manager(root / SESSION_MANAGER_PATH)
+    changed |= patch_session_core(root / SESSION_CORE_PATH)
+    changed |= patch_redirect_handler(root / REDIRECT_HANDLER_PATH)
     changed |= patch_logger(root / LOGGER_PATH)
 
     readme_path = root / README_PATH
