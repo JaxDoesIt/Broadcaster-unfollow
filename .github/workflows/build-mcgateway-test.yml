@@ -9,7 +9,7 @@ on:
         type: string
         default: ""
       force_rebuild:
-        description: Rebuild even if the immutable release image already exists
+        description: Deprecated safety input; immutable image overwrite is refused
         required: false
         type: boolean
         default: false
@@ -76,6 +76,10 @@ jobs:
             echo "Validated release: $OVERLAY_VALIDATED_RELEASE"
             exit 1
           fi
+          if [[ "${{ inputs.force_rebuild }}" == "true" ]]; then
+            echo "Refusing force_rebuild: immutable image tags are write-once. Use a new image_variant."
+            exit 1
+          fi
 
           SAFE_TAG="$(printf '%s' "$RELEASE_TAG" | sed 's/[^A-Za-z0-9_.-]/-/g')"
           BUILD_NUMBER="$(printf '%s' "$RELEASE_TAG" | grep -oE '[0-9]+' | tail -n 1 || true)"
@@ -116,12 +120,9 @@ jobs:
       - name: Check immutable image
         id: existing
         shell: bash
-        env:
-          FORCE_REBUILD: ${{ inputs.force_rebuild }}
         run: |
           set -euo pipefail
-          if [[ "${FORCE_REBUILD:-false}" != "true" ]] \
-            && docker buildx imagetools inspect "$IMMUTABLE_TAG" >/dev/null 2>&1
+          if docker buildx imagetools inspect "$IMMUTABLE_TAG" >/dev/null 2>&1
           then
             echo "Immutable image already exists. Nothing will be rebuilt or retagged."
             echo "skip=true" >> "$GITHUB_OUTPUT"
