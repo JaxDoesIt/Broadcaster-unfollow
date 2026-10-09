@@ -7,6 +7,11 @@ on:
         description: Immutable MCXboxBroadcast release to point the channel at
         required: true
         type: string
+      image_variant:
+        description: Immutable image variant to promote
+        required: false
+        type: string
+        default: "unfollow"
       channel:
         description: Live channel to change
         required: true
@@ -46,12 +51,15 @@ jobs:
         shell: bash
         env:
           RELEASE_TAG: ${{ inputs.release_tag }}
+          IMAGE_VARIANT: ${{ inputs.image_variant }}
         run: |
           set -euo pipefail
           RELEASE="$(printf '%s' "$RELEASE_TAG" | xargs)"
           [[ -n "$RELEASE" ]] || { echo "release_tag is blank"; exit 1; }
+          VARIANT="$(printf '%s' "$IMAGE_VARIANT" | xargs)"
+          [[ "$VARIANT" =~ ^[A-Za-z0-9_.-]+$ ]] || { echo "image_variant is invalid"; exit 1; }
           SAFE_TAG="$(printf '%s' "$RELEASE" | sed 's/[^A-Za-z0-9_.-]/-/g')"
-          IMMUTABLE_TAG="${IMAGE}:release-${SAFE_TAG}-unfollow"
+          IMMUTABLE_TAG="${IMAGE}:release-${SAFE_TAG}-${VARIANT}"
           docker buildx imagetools inspect "$IMMUTABLE_TAG" >/dev/null
           echo "immutable_tag=$IMMUTABLE_TAG" >> "$GITHUB_OUTPUT"
 
