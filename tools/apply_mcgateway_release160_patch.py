@@ -1,0 +1,121 @@
+#!/usr/bin/env python3
+"""Exact release160 read-only compatibility candidate; no live channel mutation.
+Relay evidence is signaling only. Existing config is transformed in RAM, never rewritten.
+"""
+import argparse, hashlib, sys
+from pathlib import Path
+
+EDITS = [
+    ('core/src/main/java/com/rtm516/mcxboxbroadcast/core/FriendManager.java',
+     '8531633fb9ef38540d2f02923c689d3443f01fb6223938fcb4b80282fedd7de2',
+     '    public void init(CoreConfig.FriendSyncConfig friendSyncConfig) {',
+     r'''    // MCGATEWAY_RELEASE160_READONLY_OVERLAY: a complete, successful HTTP reply only.
+    public int mcgatewayExactFriendCount() throws XboxFriendsException {
+        HttpRequest request = HttpRequest.newBuilder().uri(Constants.FRIENDS)
+            .timeout(java.time.Duration.ofSeconds(20))
+            .header("Authorization", sessionManager.getTokenHeader())
+            .header("x-xbl-contract-version", "7").GET().build();
+        try {
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            if (response.statusCode() != 200) throw new IllegalStateException("friend snapshot HTTP " + response.statusCode());
+            var body = com.google.gson.JsonParser.parseString(response.body()).getAsJsonObject();
+            if (!body.has("people") || !body.get("people").isJsonArray()) throw new IllegalStateException("missing people snapshot");
+            for (String continuation : new String[]{"continuationToken", "nextLink", "next"}) {
+                if (body.has(continuation) && !body.get(continuation).isJsonNull() && !body.get(continuation).getAsString().isBlank())
+                    throw new IllegalStateException("incomplete paginated friend snapshot");
+            }
+            java.util.Set<String> seen = new java.util.HashSet<>();
+            int count = 0;
+            for (var element : body.getAsJsonArray("people")) {
+                var person = element.getAsJsonObject();
+                if (!person.has("xuid") || !person.get("xuid").isJsonPrimitive() || !person.get("xuid").getAsJsonPrimitive().isString()
+                    || !person.get("xuid").getAsString().matches("[0-9]{1,20}")
+                    || !seen.add(person.get("xuid").getAsString()) || !person.has("isFriend")
+                    || !person.get("isFriend").isJsonPrimitive() || !person.get("isFriend").getAsJsonPrimitive().isBoolean())
+                    throw new IllegalStateException("invalid/duplicate friend identity or relationship");
+                if (person.get("isFriend").getAsBoolean()) count++;
+            }
+            return count;
+        } catch (InterruptedException error) {
+            Thread.currentThread().interrupt();
+            throw new XboxFriendsException("friend count interrupted");
+        } catch (Exception error) {
+            throw new XboxFriendsException("unavailable exact friend count: " + error.getMessage());
+        }
+    }
+
+    public void init(CoreConfig.FriendSyncConfig friendSyncConfig) {'''),
+    ('core/src/main/java/com/rtm516/mcxboxbroadcast/core/SessionManagerCore.java',
+     'bbf8812477decc41e2008a520e7f5ec13c0071ede6fa8a960199cf1b1c886a29',
+     '    public Logger logger() {\n        return logger;\n    }',
+     r'''    public Logger logger() {
+        return logger;
+    }
+
+    public String mcgatewayHealthLine() {
+        boolean rta = rtaWebsocket != null && rtaWebsocket.isOpen();
+        boolean httpSignaling = signaling != null && signaling.isActive();
+        boolean published = sessionInfo != null && sessionInfo.getHandleId() != null && !sessionInfo.getHandleId().isBlank();
+        return "MCGATEWAY_HEALTH_V160 initialized=" + initialized + " rta=" + rta + " httpSignaling=" + httpSignaling + " published=" + published;
+    }'''),
+    ('core/src/main/java/com/rtm516/mcxboxbroadcast/core/nethernet/HttpRelaySignaling.java',
+     'b2a2327227f21549b2bb229e708899be638ef5ffcb2cb9ca95c7822703d2be85',
+     '            logger.info("Relayed bedrock client " + gamertag + " (" + xuid + ") to target server.");',
+     r'''            logger.info("Relayed bedrock client " + gamertag + " (" + xuid + ") to target server.");
+            logger.info("MCGATEWAY_RELAY_IDENTITY_V1 xuid=" + xuid);
+            logger.info("MCGATEWAY_RELAY_SIGNALLED_V1 xuid=" + xuid);'''),
+    ('bootstrap/standalone/src/main/java/com/rtm516/mcxboxbroadcast/bootstrap/standalone/StandaloneLoggerImpl.java',
+     '26e97e2c8cd54b4df8b1177258db70d8148c04c7d6c4ba1231e73302d21a0c7a',
+     '                case "version" -> info("MCXboxBroadcast Standalone " + BuildData.VERSION);',
+     r'''                case "health" -> info(StandaloneMain.sessionManager.mcgatewayHealthLine());
+                case "friendcount" -> {
+                    try { info("MCGATEWAY_FRIEND_COUNT_V160 count=" + StandaloneMain.sessionManager.friendManager().mcgatewayExactFriendCount()); }
+                    catch (Exception error) { warn("MCGATEWAY_FRIEND_COUNT_V160 ERROR unavailable"); }
+                }
+                case "friends" -> warn("friends remove is DENIED: release160 removal contract requires a separate review.");
+                case "version" -> info("MCXboxBroadcast Standalone " + BuildData.VERSION);'''),
+    ('core/src/main/java/com/rtm516/mcxboxbroadcast/core/configs/ConfigLoader.java',
+     '34fc61332904d73ea38c75cf551215d987b5d4e77badcf7807cf6005de01533f',
+     '        if (originallyEmpty || currentVersion != newVersion) {',
+     r'''        // Existing config remains byte-identical for exact release154 image rollback.
+        // All version transformations still apply to the in-memory config above.
+        if (originallyEmpty) {'''),
+]
+
+def apply(root):
+    prepared = []
+    for relative, original_hash, anchor, replacement in EDITS:
+        path = root / relative
+        if path.is_symlink() or not path.is_file():
+            raise ValueError('missing/unsafe source: ' + relative)
+        current = path.read_text(encoding='utf-8')
+        if hashlib.sha256(current.encode()).hexdigest() == original_hash:
+            original = current
+        elif current.count(replacement) == 1:
+            original = current.replace(replacement, anchor, 1)
+            if hashlib.sha256(original.encode()).hexdigest() != original_hash:
+                raise ValueError('source hash mismatch: ' + relative)
+        else:
+            raise ValueError('source hash mismatch: ' + relative)
+        if original.count(anchor) != 1:
+            raise ValueError('ambiguous source anchor: ' + relative)
+        expected = original.replace(anchor, replacement, 1)
+        if current not in (original, expected):
+            raise ValueError('unexpected patched source: ' + relative)
+        prepared.append((path, current, expected))
+    # Preflight every byte of every input before writing any file.
+    changed = False
+    for path, current, expected in prepared:
+        if current != expected:
+            path.write_text(expected, encoding='utf-8'); changed = True
+    return changed
+
+def main():
+    parser = argparse.ArgumentParser(); parser.add_argument('root'); args = parser.parse_args()
+    changed = apply(Path(args.root).resolve())
+    print('Changed files.' if changed else 'No changes were required.')
+    print('PASS: exact160 read-only candidate; relay signaling is not transfer success.')
+if __name__ == '__main__':
+    try: main()
+    except Exception as error:
+        print('ERROR: ' + str(error), file=sys.stderr); sys.exit(1)

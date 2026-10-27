@@ -1,0 +1,95 @@
+name: Build release160 compatibility candidate
+on:
+  push:
+    branches: [mcgateway/release-160-compat]
+    paths:
+      - tools/apply_mcgateway_release160_patch.py
+      - tools/test_release160_patch.py
+      - .github/workflows/build-mcgateway-release160.yml
+      - tools/release160/**
+  workflow_dispatch:
+permissions:
+  contents: read
+  packages: write
+concurrency:
+  group: mcgateway-release160-compatibility
+  cancel-in-progress: false
+jobs:
+  candidate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      IMAGE: ghcr.io/jaxdoesit/mcgateway-broadcast:release-160-relay-audit-v1
+      BUILD_NUMBER: "160"
+      UPSTREAM_SHA: 798d8b3a6107359643b525f1c9c3303c020ae09b
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          repository: MCXboxBroadcast/Broadcaster
+          ref: 798d8b3a6107359643b525f1c9c3303c020ae09b
+          path: upstream
+          persist-credentials: false
+      - uses: actions/checkout@v6
+        with:
+          path: overlay
+          persist-credentials: false
+      - name: Validate exact source and apply separate overlay
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C upstream rev-parse HEAD)" = "$UPSTREAM_SHA"
+          python3 overlay/tools/test_release160_patch.py upstream
+          python3 overlay/tools/apply_mcgateway_release160_patch.py upstream
+          mkdir -p upstream/core/src/test/java/com/rtm516/mcxboxbroadcast/core/configs
+          cp overlay/tools/release160/ConfigCompatibilityProof.java upstream/core/src/test/java/com/rtm516/mcxboxbroadcast/core/configs/
+          cat overlay/tools/release160/config-proof.gradle.kts >> upstream/core/build.gradle.kts
+          git -C upstream diff --check
+          test -f upstream/core/src/main/java/com/rtm516/mcxboxbroadcast/core/nethernet/HttpRelaySignaling.java
+          ! grep -R -q 'MCGATEWAY_TRANSFER_SUCCESS_V1' upstream/core/src/main/java
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/wrapper-validation@v5
+      - uses: gradle/actions/setup-gradle@v5
+      - name: Compile and test on GitHub
+        working-directory: upstream
+        run: ./gradlew --no-daemon --max-workers=2 -Dorg.gradle.jvmargs=-Xmx2g build :core:mcgatewayConfigCompatibility
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Refuse immutable candidate overwrite
+        shell: bash
+        run: |
+          set -euo pipefail
+          if docker manifest inspect "$IMAGE" >/tmp/manifest.out 2>/tmp/manifest.err; then
+            echo 'Candidate already exists. Use a new reviewed candidate tag; no overwrite.'
+            exit 1
+          else
+            if ! grep -Eiq 'manifest unknown|no such manifest' /tmp/manifest.err; then
+              echo 'Registry lookup failed without proving the candidate tag absent.'
+              exit 1
+            fi
+          fi
+      - uses: docker/build-push-action@v7
+        with:
+          context: upstream
+          file: upstream/bootstrap/standalone/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: ${{ env.IMAGE }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/JaxDoesIt/Broadcaster-unfollow
+            org.opencontainers.image.revision=${{ github.sha }}
+            io.mcgateway.upstream-release=160
+            io.mcgateway.upstream-sha=798d8b3a6107359643b525f1c9c3303c020ae09b
+            io.mcgateway.overlay-variant=relay-audit-v1
+            io.mcgateway.production-ready=false
+            io.mcgateway.target-minecraft=26.60
+      - name: Record candidate identity
+        run: |
+          docker buildx imagetools inspect "$IMAGE"
+          echo 'Candidate only: test/stable tags and live bots were not changed.'
