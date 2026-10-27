@@ -8,7 +8,7 @@ def run(*args): return subprocess.run(args,text=True,capture_output=True)
 def check(value,message):
     if not value: raise AssertionError(message)
 def clone(source,target): shutil.copytree(source,target,ignore=shutil.ignore_patterns('.git','build','.gradle'))
-FILES=[Path(item) for item in ('core/src/main/java/com/rtm516/mcxboxbroadcast/core/FriendManager.java','core/src/main/java/com/rtm516/mcxboxbroadcast/core/SessionManagerCore.java','core/src/main/java/com/rtm516/mcxboxbroadcast/core/nethernet/HttpRelaySignaling.java','bootstrap/standalone/src/main/java/com/rtm516/mcxboxbroadcast/bootstrap/standalone/StandaloneLoggerImpl.java','core/src/main/java/com/rtm516/mcxboxbroadcast/core/configs/ConfigLoader.java')]
+FILES=[Path(item) for item in ('core/src/main/java/com/rtm516/mcxboxbroadcast/core/SessionManager.java','core/src/main/java/com/rtm516/mcxboxbroadcast/core/FriendManager.java','core/src/main/java/com/rtm516/mcxboxbroadcast/core/SessionManagerCore.java','core/src/main/java/com/rtm516/mcxboxbroadcast/core/nethernet/HttpRelaySignaling.java','bootstrap/standalone/src/main/java/com/rtm516/mcxboxbroadcast/bootstrap/standalone/StandaloneLoggerImpl.java','core/src/main/java/com/rtm516/mcxboxbroadcast/core/configs/ConfigLoader.java')]
 def digest(root): return {item:hashlib.sha256((root/item).read_bytes()).hexdigest() for item in FILES}
 def main():
     if len(sys.argv)!=2: raise SystemExit('usage: test_release160_patch.py <release160-upstream>')
@@ -27,6 +27,10 @@ def main():
         check('MCGATEWAY_RELAY_IDENTITY_V1' in relay and 'MCGATEWAY_RELAY_SIGNALLED_V1' in relay,'relay markers missing')
         check('friends remove is DENIED' in logger,'unsupported removal not denied')
         check('MCGATEWAY_FRIEND_COUNT_V160 count=' in logger and 'MCGATEWAY_FRIEND_COUNT_V160 ERROR unavailable' in logger,'structured friendcount console missing')
+        manager=(root/'core/src/main/java/com/rtm516/mcxboxbroadcast/core/SessionManager.java').read_text()
+        check('MCGATEWAY_RELEASE160_EXPIRY_HOLD' in manager,'upstream expiry hold missing')
+        check('scheduledThreadPool.scheduleWithFixedDelay(this::expireFriends' not in manager,'upstream expiry still scheduled')
+        check('private void expireFriends()' in manager,'unexpected SessionManager expiry implementation removed')
         config=(root/'core/src/main/java/com/rtm516/mcxboxbroadcast/core/configs/ConfigLoader.java').read_text()
         check('if (originallyEmpty) {' in config and 'currentVersion != newVersion' not in config[config.index('if (originallyEmpty) {'):],'config persistence guard missing')
     with tempfile.TemporaryDirectory(prefix='mcgateway160-bad.') as temp:
@@ -36,5 +40,5 @@ def main():
     with tempfile.TemporaryDirectory(prefix='mcgateway160-tampered.') as temp:
         root=Path(temp)/'source';clone(upstream,root);check(run('python3',str(PATCH),str(root)).returncode==0,'initial apply failed');target=root/FILES[2];target.write_text(target.read_text()+'\n// tampered\n');before=digest(root)
         failed=run('python3',str(PATCH),str(root));check(failed.returncode!=0 and 'hash mismatch' in failed.stderr,'tampered patched bytes accepted');check(digest(root)==before,'tampered preflight wrote a file')
-    print('test_release160_patch: ok (apply,idempotence,all-file-preflight,hash-guard,truth-markers)')
+    print('test_release160_patch: ok (apply,idempotence,six-file-preflight,hash-guard,expiry-scheduler-disabled,truth-markers)')
 if __name__=='__main__': main()

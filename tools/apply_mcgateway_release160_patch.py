@@ -6,6 +6,17 @@ import argparse, hashlib, sys
 from pathlib import Path
 
 EDITS = [
+    # Upstream SessionManager schedules expiry even if MCGateway's console deletion is denied.
+    # Original exact pinned GitHub git-blob SHA-1 (full file bytes, including Git blob header).
+    ('core/src/main/java/com/rtm516/mcxboxbroadcast/core/SessionManager.java',
+     'gitblob_sha1:3faaef8fda8e2737e7dad6e6631b53c42ea56482',
+     '''        if (friendSyncConfig.expiry().enabled()) {
+            scheduledThreadPool.scheduleWithFixedDelay(this::expireFriends, 10, friendSyncConfig.expiry().check(), TimeUnit.SECONDS);
+        }''',
+     '''        // MCGATEWAY_RELEASE160_EXPIRY_HOLD: never schedule upstream removal.
+        // MCGateway owns friendship cleanup and Release160 has no reviewed
+        // deletion receipt contract. Keep every legacy friend intact.
+        logger.warn("MCGateway release160: upstream automatic friend expiry is disabled.");'''),
     ('core/src/main/java/com/rtm516/mcxboxbroadcast/core/FriendManager.java',
      '8531633fb9ef38540d2f02923c689d3443f01fb6223938fcb4b80282fedd7de2',
      '    public void init(CoreConfig.FriendSyncConfig friendSyncConfig) {',
@@ -82,6 +93,16 @@ EDITS = [
         if (originallyEmpty) {'''),
 ]
 
+def matches_original_hash(text, source_hash):
+    raw = text.encode('utf-8')
+    # The additional file uses its exact upstream Git blob identity; all
+    # other pinned original files retain their SHA-256 preflight hashes.
+    if source_hash.startswith('gitblob_sha1:'):
+        identity = hashlib.sha1(b'blob ' + str(len(raw)).encode('ascii') + b'\0' + raw).hexdigest()
+        return identity == source_hash.split(':', 1)[1]
+    return hashlib.sha256(raw).hexdigest() == source_hash
+
+
 def apply(root):
     prepared = []
     for relative, original_hash, anchor, replacement in EDITS:
@@ -89,11 +110,11 @@ def apply(root):
         if path.is_symlink() or not path.is_file():
             raise ValueError('missing/unsafe source: ' + relative)
         current = path.read_text(encoding='utf-8')
-        if hashlib.sha256(current.encode()).hexdigest() == original_hash:
+        if matches_original_hash(current, original_hash):
             original = current
         elif current.count(replacement) == 1:
             original = current.replace(replacement, anchor, 1)
-            if hashlib.sha256(original.encode()).hexdigest() != original_hash:
+            if not matches_original_hash(original, original_hash):
                 raise ValueError('source hash mismatch: ' + relative)
         else:
             raise ValueError('source hash mismatch: ' + relative)

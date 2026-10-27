@@ -19,7 +19,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
-      IMAGE: ghcr.io/jaxdoesit/mcgateway-broadcast:release-160-relay-audit-v1
+      IMAGE: ghcr.io/jaxdoesit/mcgateway-broadcast:release-160-relay-audit-expiry-held-v2
       BUILD_NUMBER: "160"
       UPSTREAM_SHA: 798d8b3a6107359643b525f1c9c3303c020ae09b
     steps:
@@ -46,6 +46,8 @@ jobs:
           git -C upstream diff --check
           test -f upstream/core/src/main/java/com/rtm516/mcxboxbroadcast/core/nethernet/HttpRelaySignaling.java
           ! grep -R -q 'MCGATEWAY_TRANSFER_SUCCESS_V1' upstream/core/src/main/java
+          grep -q 'MCGATEWAY_RELEASE160_EXPIRY_HOLD' upstream/core/src/main/java/com/rtm516/mcxboxbroadcast/core/SessionManager.java
+          ! grep -F -q 'scheduleWithFixedDelay(this::expireFriends' upstream/core/src/main/java/com/rtm516/mcxboxbroadcast/core/SessionManager.java
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
@@ -86,7 +88,7 @@ jobs:
             org.opencontainers.image.revision=${{ github.sha }}
             io.mcgateway.upstream-release=160
             io.mcgateway.upstream-sha=798d8b3a6107359643b525f1c9c3303c020ae09b
-            io.mcgateway.overlay-variant=relay-audit-v1
+            io.mcgateway.overlay-variant=relay-audit-expiry-held-v2
             io.mcgateway.production-ready=false
             io.mcgateway.target-minecraft=26.60
       - name: Record candidate identity

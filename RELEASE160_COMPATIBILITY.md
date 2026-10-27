@@ -48,3 +48,10 @@ byte-identical repeated loads, new-file initialization and malformed-file safety
 
 No live action is performed or authorized by this build-only workflow. Consult
 JaxDoesIt/MCGateway Git brain for the installed production baseline and audit.
+
+
+## Immutable v2 safety improvement (2026-10-27)
+
+Upstream pinned SessionManager.java schedules expireFriends() independently of console control and MCGateway Control Bot. Candidate v2 removes that scheduler at the exact-source overlay level, so the Release160 client cannot run the upstream inactivity friend-prune cycle. This avoids inadvertent friend deletions while old 154 accounts and the Control Bot cleanup authority are preserved. The private unused expireFriends method is retained to minimize diff; the only upstream schedule call is removed. Console `friends remove` is still DENIED. Original SessionManager full-source Git blob SHA-1 and original other-file SHA-256 are preflight validated together, atomically and idempotently. This does NOT substitute for verifying MCGateway Control Bot cleanup paused and drained before Bot0, or for a proper 160 deletion contract.
+
+**v2 IMAGE**: `ghcr.io/jaxdoesit/mcgateway-broadcast:release-160-relay-audit-expiry-held-v2` (new immutable candidate tag; never overwrite v1 or test/stable). CI build and digest must be independently verified before treating it as built. Never deploy automatically.
