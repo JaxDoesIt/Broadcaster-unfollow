@@ -40,8 +40,8 @@ jobs:
           test "$(git -C upstream rev-parse HEAD)" = "$UPSTREAM_SHA"
           python3 overlay/tools/test_release160_patch.py upstream
           python3 overlay/tools/apply_mcgateway_release160_patch.py upstream
-          mkdir -p upstream/core/src/test/java/com/rtm516/mcxboxbroadcast/core/configs
-          cp overlay/tools/release160/ConfigCompatibilityProof.java upstream/core/src/test/java/com/rtm516/mcxboxbroadcast/core/configs/
+          mkdir -p upstream/core/src/mcgatewayProof/java/com/rtm516/mcxboxbroadcast/core/configs
+          cp overlay/tools/release160/ConfigCompatibilityProof.java upstream/core/src/mcgatewayProof/java/com/rtm516/mcxboxbroadcast/core/configs/
           cat overlay/tools/release160/config-proof.gradle.kts >> upstream/core/build.gradle.kts
           git -C upstream diff --check
           test -f upstream/core/src/main/java/com/rtm516/mcxboxbroadcast/core/nethernet/HttpRelaySignaling.java
