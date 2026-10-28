@@ -19,7 +19,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
-      IMAGE: ghcr.io/jaxdoesit/mcgateway-broadcast:release-160-relay-audit-expiry-held-v2
+      IMAGE: ghcr.io/jaxdoesit/mcgateway-broadcast:release-160-friend-count-proof-v3
       BUILD_NUMBER: "160"
       UPSTREAM_SHA: 798d8b3a6107359643b525f1c9c3303c020ae09b
     steps:
@@ -42,6 +42,8 @@ jobs:
           python3 overlay/tools/apply_mcgateway_release160_patch.py upstream
           mkdir -p upstream/core/src/mcgatewayProof/java/com/rtm516/mcxboxbroadcast/core/configs
           cp overlay/tools/release160/ConfigCompatibilityProof.java upstream/core/src/mcgatewayProof/java/com/rtm516/mcxboxbroadcast/core/configs/
+          mkdir -p upstream/core/src/mcgatewayProof/java/com/rtm516/mcxboxbroadcast/core
+          cp overlay/tools/release160/FriendCountProofTest.java upstream/core/src/mcgatewayProof/java/com/rtm516/mcxboxbroadcast/core/
           cat overlay/tools/release160/config-proof.gradle.kts >> upstream/core/build.gradle.kts
           git -C upstream diff --check
           test -f upstream/core/src/main/java/com/rtm516/mcxboxbroadcast/core/nethernet/HttpRelaySignaling.java
@@ -56,7 +58,7 @@ jobs:
       - uses: gradle/actions/setup-gradle@v5
       - name: Compile and test on GitHub
         working-directory: upstream
-        run: ./gradlew --no-daemon --max-workers=2 -Dorg.gradle.jvmargs=-Xmx2g build :core:mcgatewayConfigCompatibility
+        run: ./gradlew --no-daemon --max-workers=2 -Dorg.gradle.jvmargs=-Xmx2g build :core:mcgatewayConfigCompatibility :core:mcgatewayFriendCountProof
       - uses: docker/setup-buildx-action@v4
       - uses: docker/login-action@v4
         with:
@@ -77,6 +79,7 @@ jobs:
             fi
           fi
       - uses: docker/build-push-action@v7
+        id: candidate_image
         with:
           context: upstream
           file: upstream/bootstrap/standalone/Dockerfile
@@ -88,10 +91,30 @@ jobs:
             org.opencontainers.image.revision=${{ github.sha }}
             io.mcgateway.upstream-release=160
             io.mcgateway.upstream-sha=798d8b3a6107359643b525f1c9c3303c020ae09b
-            io.mcgateway.overlay-variant=relay-audit-expiry-held-v2
+            io.mcgateway.overlay-variant=friend-count-proof-v3
+            io.mcgateway.friend-count-protocol=2
+            io.mcgateway.friend-removal-protocol=unsupported
             io.mcgateway.production-ready=false
             io.mcgateway.target-minecraft=26.60
       - name: Record candidate identity
+        env:
+          IMAGE_DIGEST: ${{ steps.candidate_image.outputs.digest }}
         run: |
-          docker buildx imagetools inspect "$IMAGE"
+          docker buildx imagetools inspect "$IMAGE@$IMAGE_DIGEST"
+          python3 - <<'PYPROOF'
+          import json, os, re
+          from pathlib import Path
+          digest=os.environ['IMAGE_DIGEST']
+          assert re.fullmatch(r'sha256:[0-9a-f]{64}',digest)
+          proof={'format':'mcgateway-release160-count-candidate-v2','producerSourceCommit':os.environ['GITHUB_SHA'],
+                 'upstreamSourceCommit':os.environ['UPSTREAM_SHA'],'image':os.environ['IMAGE'],
+                 'digest':digest,'countProtocol':2,'cleanupSupported':False,'productionReady':False,
+                 'javaCountFixtures':'passed'}
+          Path('candidate-proof.json').write_text(json.dumps(proof,indent=2)+'\n')
+          PYPROOF
           echo 'Candidate only: test/stable tags and live bots were not changed.'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release160-count-candidate-proof
+          path: candidate-proof.json
+          retention-days: 30

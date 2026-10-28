@@ -10,3 +10,11 @@ tasks.register<JavaExec>("mcgatewayConfigCompatibility") {
     mainClass.set("com.rtm516.mcxboxbroadcast.core.configs.ConfigCompatibilityProof")
     maxHeapSize = "256m"
 }
+
+// Read-only count fixtures use the same compiled production helper.
+tasks.register<JavaExec>("mcgatewayFriendCountProof") {
+    dependsOn(mcgatewayProof.classesTaskName)
+    classpath = mcgatewayProof.runtimeClasspath
+    mainClass.set("com.rtm516.mcxboxbroadcast.core.FriendCountProofTest")
+    maxHeapSize = "128m"
+}

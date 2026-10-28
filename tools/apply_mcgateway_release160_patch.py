@@ -55,6 +55,17 @@ EDITS = [
         }
     }
 
+    // Lazy dedicated client: never inherit redirect-following from the general API client.
+    private static final class McgatewayCountClient {
+        static final HttpClient CLIENT = HttpClient.newBuilder()
+            .connectTimeout(java.time.Duration.ofSeconds(4))
+            .followRedirects(HttpClient.Redirect.NEVER).build();
+    }
+
+    public String mcgatewayFriendCountProof(String nonce) throws Exception {
+        return McgatewayFriendCountProof.capture(McgatewayCountClient.CLIENT, sessionManager.getTokenHeader(), nonce);
+    }
+
     public void init(CoreConfig.FriendSyncConfig friendSyncConfig) {'''),
     ('core/src/main/java/com/rtm516/mcxboxbroadcast/core/SessionManagerCore.java',
      'bbf8812477decc41e2008a520e7f5ec13c0071ede6fa8a960199cf1b1c886a29',
@@ -82,6 +93,14 @@ EDITS = [
                 case "friendcount" -> {
                     try { info("MCGATEWAY_FRIEND_COUNT_V160 count=" + StandaloneMain.sessionManager.friendManager().mcgatewayExactFriendCount()); }
                     catch (Exception error) { warn("MCGATEWAY_FRIEND_COUNT_V160 ERROR unavailable"); }
+                }
+                case "friendcountv2" -> {
+                    if (args.length != 1 || !args[0].matches("[0-9a-f]{32}")) {
+                        warn("MCGATEWAY_FRIEND_COUNT_V160_V2 nonce=invalid ERROR unavailable");
+                    } else {
+                        try { info(StandaloneMain.sessionManager.friendManager().mcgatewayFriendCountProof(args[0])); }
+                        catch (Exception error) { warn("MCGATEWAY_FRIEND_COUNT_V160_V2 nonce=" + args[0] + " ERROR unavailable"); }
+                    }
                 }
                 case "friends" -> warn("friends remove is DENIED: release160 removal contract requires a separate review.");
                 case "version" -> info("MCXboxBroadcast Standalone " + BuildData.VERSION);'''),
@@ -124,6 +143,17 @@ def apply(root):
         if current not in (original, expected):
             raise ValueError('unexpected patched source: ' + relative)
         prepared.append((path, current, expected))
+    helper_source = Path(__file__).parent / 'release160' / 'McgatewayFriendCountProof.java'
+    helper_target = root / 'core/src/main/java/com/rtm516/mcxboxbroadcast/core/McgatewayFriendCountProof.java'
+    if helper_source.is_symlink() or not helper_source.is_file():
+        raise ValueError('missing/unsafe count proof template')
+    expected_helper = helper_source.read_text(encoding='utf-8')
+    if helper_target.is_symlink() or helper_target.exists() and not helper_target.is_file():
+        raise ValueError('unsafe count proof target')
+    current_helper = helper_target.read_text(encoding='utf-8') if helper_target.exists() else ''
+    if current_helper and current_helper != expected_helper:
+        raise ValueError('source hash mismatch: count proof helper')
+    prepared.append((helper_target, current_helper, expected_helper))
     # Preflight every byte of every input before writing any file.
     changed = False
     for path, current, expected in prepared:

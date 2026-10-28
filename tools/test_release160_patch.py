@@ -26,6 +26,10 @@ def main():
         check(all(item in core for item in ('MCGATEWAY_HEALTH_V160 initialized=','rta=','httpSignaling=','published=')),'health fields missing')
         check('MCGATEWAY_RELAY_IDENTITY_V1' in relay and 'MCGATEWAY_RELAY_SIGNALLED_V1' in relay,'relay markers missing')
         check('friends remove is DENIED' in logger,'unsupported removal not denied')
+        check('case "friendcountv2"' in logger and 'nonce=invalid ERROR unavailable' in logger,'nonce-bound proof console missing')
+        helper=root/'core/src/main/java/com/rtm516/mcxboxbroadcast/core/McgatewayFriendCountProof.java'
+        check(helper.read_bytes()==PATCH.with_name('release160').joinpath('McgatewayFriendCountProof.java').read_bytes(),'count helper source mismatch')
+        check('mcgatewayFriendCountProof' in friend and 'HttpClient.Redirect.NEVER' in friend,'dedicated redirect-free count client missing')
         check('MCGATEWAY_FRIEND_COUNT_V160 count=' in logger and 'MCGATEWAY_FRIEND_COUNT_V160 ERROR unavailable' in logger,'structured friendcount console missing')
         manager=(root/'core/src/main/java/com/rtm516/mcxboxbroadcast/core/SessionManager.java').read_text()
         check('MCGATEWAY_RELEASE160_EXPIRY_HOLD' in manager,'upstream expiry hold missing')
@@ -36,9 +40,19 @@ def main():
     with tempfile.TemporaryDirectory(prefix='mcgateway160-bad.') as temp:
         root=Path(temp)/'source';clone(upstream,root);target=root/FILES[0];target.write_text(target.read_text()+'\n// MCGATEWAY_RELEASE160_READONLY_OVERLAY\n');before=digest(root)
         failed=run('python3',str(PATCH),str(root));check(failed.returncode!=0 and 'hash mismatch' in failed.stderr,'injected marker bypassed hash guard')
-        after=digest(root);check(after==before,'bad preflight wrote a file')
+        after=digest(root);check(after==before,'bad preflight wrote a file');check(not (root/'core/src/main/java/com/rtm516/mcxboxbroadcast/core/McgatewayFriendCountProof.java').exists(),'bad preflight introduced helper')
     with tempfile.TemporaryDirectory(prefix='mcgateway160-tampered.') as temp:
         root=Path(temp)/'source';clone(upstream,root);check(run('python3',str(PATCH),str(root)).returncode==0,'initial apply failed');target=root/FILES[2];target.write_text(target.read_text()+'\n// tampered\n');before=digest(root)
         failed=run('python3',str(PATCH),str(root));check(failed.returncode!=0 and 'hash mismatch' in failed.stderr,'tampered patched bytes accepted');check(digest(root)==before,'tampered preflight wrote a file')
-    print('test_release160_patch: ok (apply,idempotence,six-file-preflight,hash-guard,expiry-scheduler-disabled,truth-markers)')
+    with tempfile.TemporaryDirectory(prefix='mcgateway160-helper-tamper.') as temp:
+        root=Path(temp)/'source';clone(upstream,root)
+        helper=root/'core/src/main/java/com/rtm516/mcxboxbroadcast/core/McgatewayFriendCountProof.java'
+        helper.write_text('// unknown pre-existing helper\n');before=digest(root)
+        failed=run('python3',str(PATCH),str(root));check(failed.returncode!=0,'foreign helper accepted')
+        check(digest(root)==before and helper.read_text()=='// unknown pre-existing helper\n','foreign-helper failure wrote source')
+        helper.unlink();check(run('python3',str(PATCH),str(root)).returncode==0,'initial helper apply failed')
+        helper.write_text(helper.read_text()+'\n// tampered helper\n');before=digest(root);helper_before=helper.read_bytes()
+        failed=run('python3',str(PATCH),str(root));check(failed.returncode!=0,'tampered helper accepted')
+        check(digest(root)==before and helper.read_bytes()==helper_before,'tampered helper failure modified source')
+    print('test_release160_patch: ok (apply,idempotence,all-input-preflight,hash-guard,helper-tamper,expiry-disabled,truth-markers)')
 if __name__=='__main__': main()
