@@ -1,0 +1,89 @@
+name: Build isolated Release160 presence-proof candidate (no production tags)
+
+on:
+  push:
+    branches:
+      - fix/release160-presence-ack-2026-10-29
+    paths:
+      - '.github/workflows/release160-presence-candidate-build.yml'
+      - 'tools/apply_mcgateway_release160_patch.py'
+      - 'tools/test_release160_patch.py'
+      - 'tools/release160/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  source-gated-candidate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      UPSTREAM_SHA: 798d8b3a6107359643b525f1c9c3303c020ae09b
+      BUILD_NUMBER: '160'
+      IMAGE: ghcr.io/jaxdoesit/mcgateway-broadcast:release160-presence-proof-${{ github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: MCXboxBroadcast/Broadcaster
+          ref: 798d8b3a6107359643b525f1c9c3303c020ae09b
+          path: upstream
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          path: overlay
+          persist-credentials: false
+      - name: Reverify immutable upstream, overlay and no friend removal
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C upstream rev-parse HEAD)" = "$UPSTREAM_SHA"
+          python3 -B overlay/tools/test_release160_patch.py upstream
+          python3 -B overlay/tools/apply_mcgateway_release160_patch.py upstream
+          git -C upstream diff --check
+          grep -Fq 'MCGATEWAY_XBOX_PRESENCE_POST_ACCEPTED status=200' upstream/core/src/main/java/com/rtm516/mcxboxbroadcast/core/SessionManagerCore.java
+          grep -Fq 'MCGATEWAY_RELEASE160_EXPIRY_HOLD' upstream/core/src/main/java/com/rtm516/mcxboxbroadcast/core/SessionManager.java
+          grep -Fq 'friends remove is DENIED' upstream/bootstrap/standalone/src/main/java/com/rtm516/mcxboxbroadcast/bootstrap/standalone/StandaloneLoggerImpl.java
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Reject existing candidate tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          if docker manifest inspect "$IMAGE" >/dev/null 2>&1; then
+            echo "Immutable candidate tag already exists; refusing overwrite."
+            exit 1
+          fi
+      - name: Build and publish NONPRODUCTION candidate only
+        uses: docker/build-push-action@v6
+        id: build
+        with:
+          context: upstream
+          file: upstream/bootstrap/standalone/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: ghcr.io/jaxdoesit/mcgateway-broadcast:release160-presence-proof-${{ github.sha }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/JaxDoesIt/Broadcaster-unfollow
+            org.opencontainers.image.revision=${{ github.sha }}
+            io.mcgateway.upstream-release=160
+            io.mcgateway.upstream-sha=798d8b3a6107359643b525f1c9c3303c020ae09b
+            io.mcgateway.overlay-variant=friend-count-proof-v3-presence-ack
+            io.mcgateway.friend-count-protocol=2
+            io.mcgateway.friend-removal-protocol=unsupported
+            io.mcgateway.presence-http200-proof=1
+            io.mcgateway.production-ready=false
+      - name: Attest digest and deployment isolation
+        shell: bash
+        env:
+          IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          set -euo pipefail
+          [[ "$IMAGE_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]
+          docker buildx imagetools inspect "$IMAGE@$IMAGE_DIGEST"
+          echo "Candidate ONLY: stable/test unchanged; production bots, Control Bot and cleanup untouched."
