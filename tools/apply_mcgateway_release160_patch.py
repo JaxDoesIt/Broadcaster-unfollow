@@ -116,6 +116,11 @@ EDITS = [
 # Reconstruct BOTH original anchors before verifying the one expected upstream
 # hash; idempotence and all-input preflight still cover the complete graph.
 PRESENCE_CORE = 'core/src/main/java/com/rtm516/mcxboxbroadcast/core/SessionManagerCore.java'
+PRESENCE_COUNTER_ANCHOR = '    protected boolean initialized = false;'
+PRESENCE_COUNTER_REPLACEMENT = '''    protected boolean initialized = false;
+
+    // Streak resets only after the Xbox presence POST is actually accepted.
+    private int consecutivePresenceFailures = 0;'''
 PRESENCE_ANCHOR = r'''        int heartbeatAfter = 300;
         try {
             HttpResponse<Void> updatePresenceResponse = httpClient.send(updatePresenceRequest, HttpResponse.BodyHandlers.discarding());
@@ -137,24 +142,36 @@ PRESENCE_ANCHOR = r'''        int heartbeatAfter = 300;
         // Schedule the next presence update
         logger.debug("Presence update successful, scheduling presence update in " + heartbeatAfter + " seconds");
         scheduledThread().schedule(this::updatePresence, heartbeatAfter, TimeUnit.SECONDS);'''
-PRESENCE_REPLACEMENT = r'''        int heartbeatAfter = 300;
+PRESENCE_REPLACEMENT = r'''        int heartbeatAfter = McgatewayPresenceRetryPolicy.DEFAULT_HEARTBEAT_SECONDS;
         boolean presenceAccepted = false;
         try {
             HttpResponse<Void> updatePresenceResponse = httpClient.send(updatePresenceRequest, HttpResponse.BodyHandlers.discarding());
+            final int status = updatePresenceResponse.statusCode();
 
-            if (updatePresenceResponse.statusCode() != 200) {
-                logger.error("Failed to update presence, got status " + updatePresenceResponse.statusCode());
+            if (status != 200) {
+                logger.error("Failed to update presence, got status " + status);
+                consecutivePresenceFailures = Math.min(100, consecutivePresenceFailures + 1);
+                heartbeatAfter = McgatewayPresenceRetryPolicy.failureDelaySeconds(
+                    status, consecutivePresenceFailures,
+                    updatePresenceResponse.headers().firstValue("Retry-After").orElse(""),
+                    System.currentTimeMillis() / 1000,
+                    java.util.concurrent.ThreadLocalRandom.current().nextInt());
             } else {
                 presenceAccepted = true;
-                // Read X-Heartbeat-After header to get the next time we should update presence
-                try {
-                    heartbeatAfter = Integer.parseInt(updatePresenceResponse.headers().firstValue("X-Heartbeat-After").orElse("300"));
-                } catch (NumberFormatException e) {
-                    logger.debug("Failed to parse heartbeat after header, using default of 300");
-                }
+                consecutivePresenceFailures = 0;
+                heartbeatAfter = McgatewayPresenceRetryPolicy.acceptedDelaySeconds(
+                    updatePresenceResponse.headers().firstValue("X-Heartbeat-After").orElse(""));
             }
-        } catch (IOException | InterruptedException e) {
+        } catch (IOException e) {
             logger.error("Failed to update presence", e);
+            consecutivePresenceFailures = Math.min(100, consecutivePresenceFailures + 1);
+            heartbeatAfter = McgatewayPresenceRetryPolicy.failureDelaySeconds(
+                0, consecutivePresenceFailures, "", System.currentTimeMillis() / 1000,
+                java.util.concurrent.ThreadLocalRandom.current().nextInt());
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            logger.error("Presence update interrupted during shutdown", e);
+            return;
         }
 
         // A scheduling message is NOT proof that the HTTP request succeeded.
@@ -192,6 +209,9 @@ def apply(root):
                 if original.count(PRESENCE_REPLACEMENT) != 1:
                     raise ValueError('missing/ambiguous presence overlay: ' + relative)
                 original = original.replace(PRESENCE_REPLACEMENT, PRESENCE_ANCHOR, 1)
+                if original.count(PRESENCE_COUNTER_REPLACEMENT) != 1:
+                    raise ValueError('missing/ambiguous presence streak field: ' + relative)
+                original = original.replace(PRESENCE_COUNTER_REPLACEMENT, PRESENCE_COUNTER_ANCHOR, 1)
             if not matches_original_hash(original, original_hash):
                 raise ValueError('source hash mismatch: ' + relative)
         else:
@@ -203,6 +223,9 @@ def apply(root):
             if expected.count(PRESENCE_ANCHOR) != 1:
                 raise ValueError('missing/ambiguous original presence method: ' + relative)
             expected = expected.replace(PRESENCE_ANCHOR, PRESENCE_REPLACEMENT, 1)
+            if expected.count(PRESENCE_COUNTER_ANCHOR) != 1:
+                raise ValueError('missing/ambiguous original presence streak field: ' + relative)
+            expected = expected.replace(PRESENCE_COUNTER_ANCHOR, PRESENCE_COUNTER_REPLACEMENT, 1)
         if current not in (original, expected):
             raise ValueError('unexpected patched source: ' + relative)
         prepared.append((path, current, expected))
@@ -217,6 +240,17 @@ def apply(root):
     if current_helper and current_helper != expected_helper:
         raise ValueError('source hash mismatch: count proof helper')
     prepared.append((helper_target, current_helper, expected_helper))
+    policy_source = Path(__file__).parent / 'release160' / 'McgatewayPresenceRetryPolicy.java'
+    policy_target = root / 'core/src/main/java/com/rtm516/mcxboxbroadcast/core/McgatewayPresenceRetryPolicy.java'
+    if policy_source.is_symlink() or not policy_source.is_file():
+        raise ValueError('missing/unsafe pure presence retry policy')
+    expected_policy = policy_source.read_text(encoding='utf-8')
+    if policy_target.is_symlink() or policy_target.exists() and not policy_target.is_file():
+        raise ValueError('unsafe presence retry policy target')
+    current_policy = policy_target.read_text(encoding='utf-8') if policy_target.exists() else ''
+    if current_policy and current_policy != expected_policy:
+        raise ValueError('source hash mismatch: presence retry policy')
+    prepared.append((policy_target, current_policy, expected_policy))
     # Preflight every byte of every input before writing any file.
     changed = False
     for path, current, expected in prepared:
