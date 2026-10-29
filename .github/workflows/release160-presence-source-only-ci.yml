@@ -1,0 +1,58 @@
+name: Release160 truthful presence acknowledgement source-only CI
+
+on:
+  push:
+    branches:
+      - fix/release160-presence-ack-2026-10-29
+    paths:
+      - 'tools/apply_mcgateway_release160_patch.py'
+      - 'tools/test_release160_patch.py'
+      - 'core/src/main/java/com/rtm516/mcxboxbroadcast/core/SessionManagerCore.java'
+      - '.github/workflows/release160-presence-source-only-ci.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  exact-upstream-offline-source-proof:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      UPSTREAM_SHA: 798d8b3a6107359643b525f1c9c3303c020ae09b
+      BUILD_NUMBER: '160'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: MCXboxBroadcast/Broadcaster
+          ref: 798d8b3a6107359643b525f1c9c3303c020ae09b
+          path: upstream
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          path: overlay
+          persist-credentials: false
+      - name: Verify original source identity and exact patch idempotence
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C upstream rev-parse HEAD)" = "$UPSTREAM_SHA"
+          python3 -B overlay/tools/test_release160_patch.py upstream
+          python3 -B overlay/tools/apply_mcgateway_release160_patch.py upstream
+          git -C upstream diff --check
+          grep -Fq 'MCGATEWAY_XBOX_PRESENCE_POST_ACCEPTED status=200' upstream/core/src/main/java/com/rtm516/mcxboxbroadcast/core/SessionManagerCore.java
+          ! grep -Fq 'Presence update successful, scheduling presence update' upstream/core/src/main/java/com/rtm516/mcxboxbroadcast/core/SessionManagerCore.java
+          mkdir -p upstream/core/src/mcgatewayProof/java/com/rtm516/mcxboxbroadcast/core/configs
+          cp overlay/tools/release160/ConfigCompatibilityProof.java upstream/core/src/mcgatewayProof/java/com/rtm516/mcxboxbroadcast/core/configs/
+          mkdir -p upstream/core/src/mcgatewayProof/java/com/rtm516/mcxboxbroadcast/core
+          cp overlay/tools/release160/FriendCountProofTest.java upstream/core/src/mcgatewayProof/java/com/rtm516/mcxboxbroadcast/core/
+          cat overlay/tools/release160/config-proof.gradle.kts >> upstream/core/build.gradle.kts
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/wrapper-validation@v4
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Compile real upstream Release160 overlay; no Docker publish
+        working-directory: upstream
+        run: ./gradlew --no-daemon --max-workers=2 -Dorg.gradle.jvmargs=-Xmx2g :core:compileJava :bootstrap-standalone:compileJava :core:mcgatewayFriendCountProof
