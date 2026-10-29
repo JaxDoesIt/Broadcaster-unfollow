@@ -54,6 +54,9 @@ public abstract class SessionManagerCore {
 
     protected boolean initialized = false;
 
+    // Streak resets only after the Xbox presence POST is actually accepted.
+    private int consecutivePresenceFailures = 0;
+
     private Channel netherNetChannel;
     private EventLoopGroup bossGroup;
     private EventLoopGroup workerGroup;
@@ -490,24 +493,36 @@ public abstract class SessionManagerCore {
             .POST(HttpRequest.BodyPublishers.ofString("{\"state\": \"active\"}"))
             .build();
 
-        int heartbeatAfter = 300;
+        int heartbeatAfter = McgatewayPresenceRetryPolicy.DEFAULT_HEARTBEAT_SECONDS;
         boolean presenceAccepted = false;
         try {
             HttpResponse<Void> updatePresenceResponse = httpClient.send(updatePresenceRequest, HttpResponse.BodyHandlers.discarding());
+            final int status = updatePresenceResponse.statusCode();
 
-            if (updatePresenceResponse.statusCode() != 200) {
-                logger.error("Failed to update presence, got status " + updatePresenceResponse.statusCode());
+            if (status != 200) {
+                logger.error("Failed to update presence, got status " + status);
+                consecutivePresenceFailures = Math.min(100, consecutivePresenceFailures + 1);
+                heartbeatAfter = McgatewayPresenceRetryPolicy.failureDelaySeconds(
+                    status, consecutivePresenceFailures,
+                    updatePresenceResponse.headers().firstValue("Retry-After").orElse(""),
+                    System.currentTimeMillis() / 1000,
+                    java.util.concurrent.ThreadLocalRandom.current().nextInt());
             } else {
                 presenceAccepted = true;
-                // Read X-Heartbeat-After header to get the next time we should update presence
-                try {
-                    heartbeatAfter = Integer.parseInt(updatePresenceResponse.headers().firstValue("X-Heartbeat-After").orElse("300"));
-                } catch (NumberFormatException e) {
-                    logger.debug("Failed to parse heartbeat after header, using default of 300");
-                }
+                consecutivePresenceFailures = 0;
+                heartbeatAfter = McgatewayPresenceRetryPolicy.acceptedDelaySeconds(
+                    updatePresenceResponse.headers().firstValue("X-Heartbeat-After").orElse(""));
             }
-        } catch (IOException | InterruptedException e) {
+        } catch (IOException e) {
             logger.error("Failed to update presence", e);
+            consecutivePresenceFailures = Math.min(100, consecutivePresenceFailures + 1);
+            heartbeatAfter = McgatewayPresenceRetryPolicy.failureDelaySeconds(
+                0, consecutivePresenceFailures, "", System.currentTimeMillis() / 1000,
+                java.util.concurrent.ThreadLocalRandom.current().nextInt());
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            logger.error("Presence update interrupted during shutdown", e);
+            return;
         }
 
         // A scheduling message is NOT proof that the HTTP request succeeded.
