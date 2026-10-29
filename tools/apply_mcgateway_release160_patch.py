@@ -112,6 +112,61 @@ EDITS = [
         if (originallyEmpty) {'''),
 ]
 
+# Secondary exact pinned edit on the same SessionManagerCore source file.
+# Reconstruct BOTH original anchors before verifying the one expected upstream
+# hash; idempotence and all-input preflight still cover the complete graph.
+PRESENCE_CORE = 'core/src/main/java/com/rtm516/mcxboxbroadcast/core/SessionManagerCore.java'
+PRESENCE_ANCHOR = r'''        int heartbeatAfter = 300;
+        try {
+            HttpResponse<Void> updatePresenceResponse = httpClient.send(updatePresenceRequest, HttpResponse.BodyHandlers.discarding());
+
+            if (updatePresenceResponse.statusCode() != 200) {
+                logger.error("Failed to update presence, got status " + updatePresenceResponse.statusCode());
+            } else {
+                // Read X-Heartbeat-After header to get the next time we should update presence
+                try {
+                    heartbeatAfter = Integer.parseInt(updatePresenceResponse.headers().firstValue("X-Heartbeat-After").orElse("300"));
+                } catch (NumberFormatException e) {
+                    logger.debug("Failed to parse heartbeat after header, using default of 300");
+                }
+            }
+        } catch (IOException | InterruptedException e) {
+            logger.error("Failed to update presence", e);
+        }
+
+        // Schedule the next presence update
+        logger.debug("Presence update successful, scheduling presence update in " + heartbeatAfter + " seconds");
+        scheduledThread().schedule(this::updatePresence, heartbeatAfter, TimeUnit.SECONDS);'''
+PRESENCE_REPLACEMENT = r'''        int heartbeatAfter = 300;
+        boolean presenceAccepted = false;
+        try {
+            HttpResponse<Void> updatePresenceResponse = httpClient.send(updatePresenceRequest, HttpResponse.BodyHandlers.discarding());
+
+            if (updatePresenceResponse.statusCode() != 200) {
+                logger.error("Failed to update presence, got status " + updatePresenceResponse.statusCode());
+            } else {
+                presenceAccepted = true;
+                // Read X-Heartbeat-After header to get the next time we should update presence
+                try {
+                    heartbeatAfter = Integer.parseInt(updatePresenceResponse.headers().firstValue("X-Heartbeat-After").orElse("300"));
+                } catch (NumberFormatException e) {
+                    logger.debug("Failed to parse heartbeat after header, using default of 300");
+                }
+            }
+        } catch (IOException | InterruptedException e) {
+            logger.error("Failed to update presence", e);
+        }
+
+        // A scheduling message is NOT proof that the HTTP request succeeded.
+        // This closed marker is emitted ONLY for a real HTTP 200 response.
+        // It has no account identifiers, authorization headers or response body.
+        if (presenceAccepted) {
+            logger.info("MCGATEWAY_XBOX_PRESENCE_POST_ACCEPTED status=200");
+        }
+        logger.debug("Presence update " + (presenceAccepted ? "accepted" : "unverified")
+            + ", scheduling presence update in " + heartbeatAfter + " seconds");
+        scheduledThread().schedule(this::updatePresence, heartbeatAfter, TimeUnit.SECONDS);'''
+
 def matches_original_hash(text, source_hash):
     raw = text.encode('utf-8')
     # The additional file uses its exact upstream Git blob identity; all
@@ -133,6 +188,10 @@ def apply(root):
             original = current
         elif current.count(replacement) == 1:
             original = current.replace(replacement, anchor, 1)
+            if relative == PRESENCE_CORE:
+                if original.count(PRESENCE_REPLACEMENT) != 1:
+                    raise ValueError('missing/ambiguous presence overlay: ' + relative)
+                original = original.replace(PRESENCE_REPLACEMENT, PRESENCE_ANCHOR, 1)
             if not matches_original_hash(original, original_hash):
                 raise ValueError('source hash mismatch: ' + relative)
         else:
@@ -140,6 +199,10 @@ def apply(root):
         if original.count(anchor) != 1:
             raise ValueError('ambiguous source anchor: ' + relative)
         expected = original.replace(anchor, replacement, 1)
+        if relative == PRESENCE_CORE:
+            if expected.count(PRESENCE_ANCHOR) != 1:
+                raise ValueError('missing/ambiguous original presence method: ' + relative)
+            expected = expected.replace(PRESENCE_ANCHOR, PRESENCE_REPLACEMENT, 1)
         if current not in (original, expected):
             raise ValueError('unexpected patched source: ' + relative)
         prepared.append((path, current, expected))
