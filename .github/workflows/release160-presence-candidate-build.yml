@@ -1,13 +1,15 @@
-name: Build isolated Release160 presence-proof candidate (no production tags)
+name: Build isolated Release160 presence retry candidate (never production)
 
 on:
   push:
     branches:
-      - fix/release160-presence-ack-2026-10-29
+      - fix/release160-presence-503-backoff-2026-10-29
     paths:
       - '.github/workflows/release160-presence-candidate-build.yml'
       - 'tools/apply_mcgateway_release160_patch.py'
       - 'tools/test_release160_patch.py'
+      - 'tools/release160/McgatewayPresenceRetryPolicy*.java'
+      - 'core/src/main/java/com/rtm516/mcxboxbroadcast/core/SessionManagerCore.java'
       - 'tools/release160/**'
   workflow_dispatch:
 
@@ -43,12 +45,24 @@ jobs:
           python3 -B overlay/tools/apply_mcgateway_release160_patch.py upstream
           git -C upstream diff --check
           grep -Fq 'MCGATEWAY_XBOX_PRESENCE_POST_ACCEPTED status=200' upstream/core/src/main/java/com/rtm516/mcxboxbroadcast/core/SessionManagerCore.java
+          grep -Fq 'McgatewayPresenceRetryPolicy.failureDelaySeconds(' upstream/core/src/main/java/com/rtm516/mcxboxbroadcast/core/SessionManagerCore.java
+          test -s upstream/core/src/main/java/com/rtm516/mcxboxbroadcast/core/McgatewayPresenceRetryPolicy.java
           grep -Fq 'MCGATEWAY_RELEASE160_EXPIRY_HOLD' upstream/core/src/main/java/com/rtm516/mcxboxbroadcast/core/SessionManager.java
           grep -Fq 'friends remove is DENIED' upstream/bootstrap/standalone/src/main/java/com/rtm516/mcxboxbroadcast/bootstrap/standalone/StandaloneLoggerImpl.java
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '21'
+      - name: Verify bounded 503 and 429 retry policy without Xbox network
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/retry-policy-proof"
+          javac -d "$RUNNER_TEMP/retry-policy-proof" \
+            upstream/core/src/main/java/com/rtm516/mcxboxbroadcast/core/McgatewayPresenceRetryPolicy.java \
+            overlay/tools/release160/McgatewayPresenceRetryPolicyTest.java
+          java -cp "$RUNNER_TEMP/retry-policy-proof" \
+            com.rtm516.mcxboxbroadcast.core.McgatewayPresenceRetryPolicyTest
       - uses: gradle/actions/wrapper-validation@v4
       - uses: gradle/actions/setup-gradle@v4
       - name: Build exact Release160 standalone JAR before Docker packaging
@@ -87,7 +101,7 @@ jobs:
             org.opencontainers.image.revision=${{ github.sha }}
             io.mcgateway.upstream-release=160
             io.mcgateway.upstream-sha=798d8b3a6107359643b525f1c9c3303c020ae09b
-            io.mcgateway.overlay-variant=friend-count-proof-v3-presence-ack
+            io.mcgateway.overlay-variant=friend-count-proof-v3-presence-retry-v1
             io.mcgateway.friend-count-protocol=2
             io.mcgateway.friend-removal-protocol=unsupported
             io.mcgateway.presence-http200-proof=1
