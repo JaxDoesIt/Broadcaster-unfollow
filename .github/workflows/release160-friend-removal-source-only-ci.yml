@@ -11,6 +11,8 @@ on:
       - 'tools/release160/McgatewayXboxRelationshipEnvelopeV160Test.java'
       - 'tools/release160/McgatewayXboxSummaryReadOnlyV160.java'
       - 'tools/release160/McgatewayXboxSummaryReadOnlyV160Test.java'
+      - 'tools/release160/xbox_summary_schema_probe.py'
+      - 'tools/release160/test_xbox_summary_schema_probe.py'
       - '.github/workflows/release160-friend-removal-source-only-ci.yml'
   workflow_dispatch:
 
@@ -52,6 +54,19 @@ jobs:
           java -cp "$work" com.rtm516.mcxboxbroadcast.core.McgatewayFriendRemoveV160Test
           java -cp "$work" com.rtm516.mcxboxbroadcast.core.McgatewayXboxRelationshipEnvelopeV160Test
           java -cp "$work" com.rtm516.mcxboxbroadcast.core.McgatewayXboxSummaryReadOnlyV160Test
+      - name: Verify offline redacted PersonSummary schema probe
+        shell: bash
+        env:
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: |
+          set -euo pipefail
+          python3 -B tools/release160/test_xbox_summary_schema_probe.py
+          python3 -B tools/release160/xbox_summary_schema_probe.py
+          if grep -nE '^(import|from) (requests|urllib|http|socket|subprocess|os|httpx)' tools/release160/xbox_summary_schema_probe.py; then
+            echo "HOLD: network or subprocess import in source-only schema probe"
+            exit 1
+          fi
+          echo "Schema probe is offline-only; no token, Xbox call or DELETE"
       - name: Assert this candidate has no production integration
         shell: bash
         run: |
