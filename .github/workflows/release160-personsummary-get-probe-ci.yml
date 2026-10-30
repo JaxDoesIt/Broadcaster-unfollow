@@ -7,6 +7,8 @@ on:
     paths:
       - 'tools/release160/McgatewayXboxPersonSummaryProbeV160.java'
       - 'tools/release160/McgatewayXboxPersonSummaryProbeV160Test.java'
+      - 'tools/release160/apply_personsummary_canary.py'
+      - 'tools/release160/test_apply_personsummary_canary.py'
       - '.github/workflows/release160-personsummary-get-probe-ci.yml'
   workflow_dispatch:
 
@@ -43,6 +45,7 @@ jobs:
           test "$(git -C upstream rev-parse HEAD)" = "$UPSTREAM_SHA"
           python3 -B overlay/tools/test_release160_patch.py upstream
           python3 -B overlay/tools/apply_mcgateway_release160_patch.py upstream
+          PYTHONDONTWRITEBYTECODE=1 python3 -B overlay/tools/release160/test_apply_personsummary_canary.py
           test -s overlay/tools/release160/McgatewayXboxPersonSummaryProbeV160.java
           test -s overlay/tools/release160/McgatewayXboxPersonSummaryProbeV160Test.java
           cp overlay/tools/release160/McgatewayXboxPersonSummaryProbeV160.java \
@@ -50,6 +53,10 @@ jobs:
           mkdir -p upstream/core/src/mcgatewayProof/java/com/rtm516/mcxboxbroadcast/core
           cp overlay/tools/release160/McgatewayXboxPersonSummaryProbeV160Test.java \
              upstream/core/src/mcgatewayProof/java/com/rtm516/mcxboxbroadcast/core/
+          python3 -B overlay/tools/release160/apply_personsummary_canary.py upstream \
+             overlay/tools/release160/McgatewayXboxPersonSummaryProbeV160.java
+          grep -Fq 'case "personsummaryprobe" ->' upstream/bootstrap/standalone/src/main/java/com/rtm516/mcxboxbroadcast/bootstrap/standalone/StandaloneLoggerImpl.java
+          grep -Fq 'mcgatewayOneShotPersonSummaryProbe' upstream/core/src/main/java/com/rtm516/mcxboxbroadcast/core/FriendManager.java
           cat overlay/tools/release160/config-proof.gradle.kts >> upstream/core/build.gradle.kts
           cat >> upstream/core/build.gradle.kts <<'EOF'
           tasks.register<JavaExec>("mcgatewayPersonSummaryProbeProof") {
@@ -60,19 +67,21 @@ jobs:
           }
           EOF
           grep -Fq 'friends remove is DENIED' upstream/bootstrap/standalone/src/main/java/com/rtm516/mcxboxbroadcast/bootstrap/standalone/StandaloneLoggerImpl.java
-          ! grep -Fq 'McgatewayXboxPersonSummaryProbeV160' upstream/bootstrap/standalone/src/main/java/com/rtm516/mcxboxbroadcast/bootstrap/standalone/StandaloneLoggerImpl.java
+          grep -Fq 'case "personsummaryprobe" ->' upstream/bootstrap/standalone/src/main/java/com/rtm516/mcxboxbroadcast/bootstrap/standalone/StandaloneLoggerImpl.java
       - name: Compile exact Release160 source with Gson and run fake GET tests
         working-directory: upstream
         shell: bash
         run: |
           set -euo pipefail
           ./gradlew --no-daemon --max-workers=2 -Dorg.gradle.jvmargs=-Xmx2g \
-            :core:mcgatewayPersonSummaryProbeProof
-      - name: Confirm no live console, token export or Xbox DELETE
+            :core:mcgatewayPersonSummaryProbeProof \
+            :bootstrap-standalone:classes
+      - name: Confirm canary source preserves removal denial and never issues DELETE
         shell: bash
         run: |
           set -euo pipefail
-          ! grep -Fq 'McgatewayXboxPersonSummaryProbeV160' upstream/core/src/main/java/com/rtm516/mcxboxbroadcast/core/FriendManager.java
+          grep -Fq 'mcgatewayOneShotPersonSummaryProbe' upstream/core/src/main/java/com/rtm516/mcxboxbroadcast/core/FriendManager.java
+          grep -Fq 'friends remove is DENIED' upstream/bootstrap/standalone/src/main/java/com/rtm516/mcxboxbroadcast/bootstrap/standalone/StandaloneLoggerImpl.java
           ! grep -Fq '.DELETE()' overlay/tools/release160/McgatewayXboxPersonSummaryProbeV160.java
           ! grep -Fq 'dumpsession' overlay/tools/release160/McgatewayXboxPersonSummaryProbeV160.java
           echo "Exact upstream compile and mocked parser tests only; no production network or image publish."
