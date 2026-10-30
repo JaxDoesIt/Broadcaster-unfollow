@@ -7,7 +7,7 @@ from apply_personsummary_canary import (
     patch, FRIEND_ANCHOR, CONSOLE_ANCHOR, FRIEND_PATH, CONSOLE_PATH, CORE_TARGET,
 )
 
-HELPER = Path(__file__).resolve().parent.parent / 'McgatewayXboxPersonSummaryProbeV160.java'
+HELPER = Path(__file__).resolve().parent / 'McgatewayXboxPersonSummaryProbeV160.java'
 
 
 def fixture(root: Path) -> dict[Path, bytes]:
