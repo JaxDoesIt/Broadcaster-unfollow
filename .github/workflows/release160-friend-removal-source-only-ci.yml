@@ -1,0 +1,52 @@
+name: Release160 friend-removal postcondition source-only CI
+
+on:
+  push:
+    branches:
+      - fix/release160-friend-removal-contract-2026-10-30
+    paths:
+      - 'tools/release160/McgatewayFriendRemoveV160.java'
+      - 'tools/release160/McgatewayFriendRemoveV160Test.java'
+      - '.github/workflows/release160-friend-removal-source-only-ci.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  fake-http-proof-only:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Prove existing Release160 real removal command remains DENIED
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -Fq 'case "friends" -> warn("friends remove is DENIED:' tools/apply_mcgateway_release160_patch.py
+          grep -Fq 'MCGATEWAY_RELEASE160_EXPIRY_HOLD' tools/apply_mcgateway_release160_patch.py
+          ! grep -Fq 'M c g' tools/release160/McgatewayFriendRemoveV160.java
+          echo 'Release160 production removal command remains blocked'
+      - name: Compile and run isolated fake Xbox HTTP postcondition tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          work="$RUNNER_TEMP/release160-friend-remove-fake-http"
+          mkdir -p "$work"
+          javac -d "$work" \
+            tools/release160/McgatewayFriendRemoveV160.java \
+            tools/release160/McgatewayFriendRemoveV160Test.java
+          java -cp "$work" com.rtm516.mcxboxbroadcast.core.McgatewayFriendRemoveV160Test
+      - name: Assert this candidate has no production integration
+        shell: bash
+        run: |
+          set -euo pipefail
+          ! grep -Fq 'new McgatewayFriendRemoveV160' bootstrap/standalone/src/main/java/com/rtm516/mcxboxbroadcast/bootstrap/standalone/StandaloneLoggerImpl.java
+          ! grep -Fq 'new McgatewayFriendRemoveV160' core/src/main/java/com/rtm516/mcxboxbroadcast/core/FriendManager.java
+          echo 'No live Xbox HTTP requests, Docker, service, database or friend cleanup interactions'
