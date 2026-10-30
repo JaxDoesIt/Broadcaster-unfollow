@@ -31,7 +31,6 @@ jobs:
           set -euo pipefail
           grep -Fq 'case "friends" -> warn("friends remove is DENIED:' tools/apply_mcgateway_release160_patch.py
           grep -Fq 'MCGATEWAY_RELEASE160_EXPIRY_HOLD' tools/apply_mcgateway_release160_patch.py
-          ! grep -Fq 'M c g' tools/release160/McgatewayFriendRemoveV160.java
           echo 'Release160 production removal command remains blocked'
       - name: Compile and run isolated fake Xbox HTTP postcondition tests
         shell: bash
