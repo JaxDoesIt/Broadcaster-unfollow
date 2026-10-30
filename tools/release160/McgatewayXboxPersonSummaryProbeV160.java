@@ -113,11 +113,21 @@ public final class McgatewayXboxPersonSummaryProbeV160 {
                 reply.body() == null || reply.body().length < 2 || reply.body().length > MAX_BYTES ||
                 !validHeaders(reply.headers(), reply.body().length))
                 return verdict(nonce, http, "unverified");
-            String body = StandardCharsets.UTF_8.newDecoder()
-                .onMalformedInput(CodingErrorAction.REPORT)
-                .onUnmappableCharacter(CodingErrorAction.REPORT)
-                .decode(ByteBuffer.wrap(reply.body())).toString();
-            return verdict(nonce, http, fieldShape(body));
+            // The exact HTTP 200 response is established before decoding.
+            // Invalid UTF-8, malformed JSON and ambiguous relationship fields
+            // must invalidate schema evidence, NOT erase a known HTTP status.
+            // Keep the outer catch for failures before an HTTP reply exists.
+            String schema;
+            try {
+                String body = StandardCharsets.UTF_8.newDecoder()
+                    .onMalformedInput(CodingErrorAction.REPORT)
+                    .onUnmappableCharacter(CodingErrorAction.REPORT)
+                    .decode(ByteBuffer.wrap(reply.body())).toString();
+                schema = fieldShape(body);
+            } catch (Exception ignored) {
+                schema = "unverified";
+            }
+            return verdict(nonce, http, schema);
         } catch (Exception ignored) {
             return verdict(nonce, "unverified", "unverified");
         }
