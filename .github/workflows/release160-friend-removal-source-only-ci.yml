@@ -9,6 +9,8 @@ on:
       - 'tools/release160/McgatewayFriendRemoveV160Test.java'
       - 'tools/release160/McgatewayXboxRelationshipEnvelopeV160.java'
       - 'tools/release160/McgatewayXboxRelationshipEnvelopeV160Test.java'
+      - 'tools/release160/McgatewayXboxSummaryReadOnlyV160.java'
+      - 'tools/release160/McgatewayXboxSummaryReadOnlyV160Test.java'
       - '.github/workflows/release160-friend-removal-source-only-ci.yml'
   workflow_dispatch:
 
@@ -34,7 +36,7 @@ jobs:
           grep -Fq 'case "friends" -> warn("friends remove is DENIED:' tools/apply_mcgateway_release160_patch.py
           grep -Fq 'MCGATEWAY_RELEASE160_EXPIRY_HOLD' tools/apply_mcgateway_release160_patch.py
           echo 'Release160 production removal command remains blocked'
-      - name: Compile and run isolated fake Xbox HTTP and schema-envelope tests
+      - name: Compile and run isolated fake Xbox HTTP, Person and PersonSummary tests
         shell: bash
         run: |
           set -euo pipefail
@@ -44,9 +46,12 @@ jobs:
             tools/release160/McgatewayFriendRemoveV160.java \
             tools/release160/McgatewayFriendRemoveV160Test.java \
             tools/release160/McgatewayXboxRelationshipEnvelopeV160.java \
-            tools/release160/McgatewayXboxRelationshipEnvelopeV160Test.java
+            tools/release160/McgatewayXboxRelationshipEnvelopeV160Test.java \
+            tools/release160/McgatewayXboxSummaryReadOnlyV160.java \
+            tools/release160/McgatewayXboxSummaryReadOnlyV160Test.java
           java -cp "$work" com.rtm516.mcxboxbroadcast.core.McgatewayFriendRemoveV160Test
           java -cp "$work" com.rtm516.mcxboxbroadcast.core.McgatewayXboxRelationshipEnvelopeV160Test
+          java -cp "$work" com.rtm516.mcxboxbroadcast.core.McgatewayXboxSummaryReadOnlyV160Test
       - name: Assert this candidate has no production integration
         shell: bash
         run: |
@@ -55,4 +60,6 @@ jobs:
           ! grep -Fq 'new McgatewayFriendRemoveV160' core/src/main/java/com/rtm516/mcxboxbroadcast/core/FriendManager.java
           ! grep -Fq 'new McgatewayXboxRelationshipEnvelopeV160' bootstrap/standalone/src/main/java/com/rtm516/mcxboxbroadcast/bootstrap/standalone/StandaloneLoggerImpl.java
           ! grep -Fq 'new McgatewayXboxRelationshipEnvelopeV160' core/src/main/java/com/rtm516/mcxboxbroadcast/core/FriendManager.java
+          ! grep -Fq 'McgatewayXboxSummaryReadOnlyV160' bootstrap/standalone/src/main/java/com/rtm516/mcxboxbroadcast/bootstrap/standalone/StandaloneLoggerImpl.java
+          ! grep -Fq 'McgatewayXboxSummaryReadOnlyV160' core/src/main/java/com/rtm516/mcxboxbroadcast/core/FriendManager.java
           echo 'No live Xbox HTTP requests, Docker, service, database or friend cleanup interactions'
