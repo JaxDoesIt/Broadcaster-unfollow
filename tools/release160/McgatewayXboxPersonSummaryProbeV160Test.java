@@ -76,6 +76,19 @@ public final class McgatewayXboxPersonSummaryProbeV160Test {
             eq(true,run(json).contains("fields=unverified") ||
                 run(json).contains("fields=missing_field"),"malformed data fails closed");
         }
+        // HTTP transport success is not the same as valid JSON. Even malformed
+        // or non-UTF8 content must retain the real HTTP status for diagnostics,
+        // while refusing to claim any verified friendship relationship.
+        String malformed = run("{\"isCallerFollowingTarget\":true,");
+        eq(true,malformed.contains("http=200 fields=unverified"),
+            "malformed JSON keeps known 200 but invalidates schema");
+        String invalidUtf8 = McgatewayXboxPersonSummaryProbeV160.capture(req ->
+            new McgatewayXboxPersonSummaryProbeV160.Reply(200,req.uri(),
+                Map.of("Content-Type",List.of("application/json")),
+                new byte[]{(byte)0xff,(byte)0xfe},true),SECRET,XUID,NONCE);
+        matches(invalidUtf8,prefix);
+        eq(true,invalidUtf8.contains("http=200 fields=unverified"),
+            "malformed UTF8 keeps known 200 but invalidates schema");
         for (int status : new int[]{401,403,404,429,500,503}) {
             String report = McgatewayXboxPersonSummaryProbeV160.capture(req ->
                 reply(req,"{}",status),SECRET,XUID,NONCE);
