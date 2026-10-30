@@ -30,3 +30,22 @@ The **removal result** can be `VERIFIED_REMOVED`, `VERIFIED_ALREADY_ABSENT`, `UN
 5. Only then request explicit owner approval for **one protected one-bot, one-target supervised removal** with independent proof of Xbox state, no effect on protected player access, and a rollback/reconciliation plan. Never start with the entire pending backlog or three parallel workers.
 
 Nothing in this work updates stable/test tags, creates a production image, modifies the Control Bot service, touches Docker, accesses the live database or resumes friend cleanup.
+
+## Oct 30: strict HTTP envelope validator and Microsoft schema discrepancy
+
+New source-only files (NOT wired to the standalone logger, no real `HttpClient`):
+- `tools/release160/McgatewayXboxRelationshipEnvelopeV160.java`, exact Git blob `03eaeb492723f45b4c8fc5f1c209d001cb6c255b`.
+- `tools/release160/McgatewayXboxRelationshipEnvelopeV160Test.java`, exact Git blob `0ee6276e2166e068f30b184574eb004c10da5c05`.
+
+JDK21 `javac` compiled the exact Git-identical files locally and the fake HTTP envelope suite PASSED **191** assertions; the earlier policy suite separately PASSED **167** assertions (**358** total). These do not make real Xbox HTTP calls. The existing GitHub Actions workflow now compiles/runs both sets; **CI status is not independently verified**.
+
+The source-only `UnconnectedWireAdapter` receives fake typed response envelopes with explicit status, exact URI, account/session binding, no redirect, bounded body size, Content-Type, Content-Length consistency and cache indicators. Only a 200 Person object with exact target XUID AND **both actual Boolean** `isFollowingCaller` and `isFollowedByCaller` values is eligible for a syntactic snapshot. A missing or null flag, a 404, inconsistent type/identity, redirected response, ambiguous duplicate headers, stale/cache-hit or failed request yields no verified snapshot. DELETE 2xx/404 replies remain tentative and require a subsequent independently verified GET. This is structural validation over a **pre-decoded Map**, not a real strict JSON decoder or a provenance claim about the wire. The future real decoder must reject duplicate JSON keys, invalid encoding and unbounded JSON nesting; the real network adapter must enforce timeouts, redirection disabling, exact account credentials and body cap itself, not merely set Boolean flags.
+
+**Important external schema blocker**: Microsoft Learn's GET `/users/{ownerId}/people/{targetid}` documentation describes a single Person response and 404 as target not found in owner's People list:
+<https://learn.microsoft.com/en-us/xbox/gdk/docs/reference/live/rest/uri/people/uri-usersowneridpeopletargetidget?view=gdk-2604>.
+Its Person JSON reference lists `isFollowingCaller` as **optional**, and does not guarantee an `isFollowedByCaller` field:
+<https://learn.microsoft.com/fr-fr/xbox/gdk/docs/reference/live/rest/json/json-person?view=gdk-2510>.
+Existing upstream `FriendStatusResponse` uses Java **primitive booleans**, which can collapse missing JSON booleans into false on model deserialization. Therefore a GET200 Person without both independently interpreted, explicitly present fields is **NOT proof of two-direction absence**. A GET404 is also NOT sufficient proof of both relationship directions. Other Xbox-related schemas sometimes carry both flags, but this does not establish they remain authoritative for Release160 on real accounts.
+
+**NEXT SAFETY GATE**: design a separately owner-approved **read-only authenticated schema probe** that reports only field presence/type, response status, non-secret correlation and elapsed times, never raw tokens, gamer tags, XUIDs or response bodies. It must not issue DELETE or change the friend list. Before implementing live deletion, independently verify on the authenticated account whether both relationship directions can be observed with trustworthy semantics and fresh post-read behavior; if not, develop a different verified read-only postcondition, not a guessed false default. No one-bot deletion canary or auto-cleanup until this is proven.
+
