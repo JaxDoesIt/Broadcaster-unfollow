@@ -60,7 +60,7 @@ jobs:
           }
           EOF
           grep -Fq 'friends remove is DENIED' upstream/bootstrap/standalone/src/main/java/com/rtm516/mcxboxbroadcast/bootstrap/standalone/StandaloneLoggerImpl.java
-          ! grep -Fq 'M c g a t e w a y X b o x' upstream/bootstrap/standalone/src/main/java/com/rtm516/mcxboxbroadcast/bootstrap/standalone/StandaloneLoggerImpl.java
+          ! grep -Fq 'McgatewayXboxPersonSummaryProbeV160' upstream/bootstrap/standalone/src/main/java/com/rtm516/mcxboxbroadcast/bootstrap/standalone/StandaloneLoggerImpl.java
       - name: Compile exact Release160 source with Gson and run fake GET tests
         working-directory: upstream
         shell: bash
@@ -72,7 +72,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          ! grep -Fq 'M c g a t e w a y X b o x' upstream/core/src/main/java/com/rtm516/mcxboxbroadcast/core/FriendManager.java
+          ! grep -Fq 'McgatewayXboxPersonSummaryProbeV160' upstream/core/src/main/java/com/rtm516/mcxboxbroadcast/core/FriendManager.java
           ! grep -Fq '.DELETE()' overlay/tools/release160/McgatewayXboxPersonSummaryProbeV160.java
           ! grep -Fq 'dumpsession' overlay/tools/release160/McgatewayXboxPersonSummaryProbeV160.java
           echo "Exact upstream compile and mocked parser tests only; no production network or image publish."
