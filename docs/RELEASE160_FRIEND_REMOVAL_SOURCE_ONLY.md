@@ -49,3 +49,22 @@ Existing upstream `FriendStatusResponse` uses Java **primitive booleans**, which
 
 **NEXT SAFETY GATE**: design a separately owner-approved **read-only authenticated schema probe** that reports only field presence/type, response status, non-secret correlation and elapsed times, never raw tokens, gamer tags, XUIDs or response bodies. It must not issue DELETE or change the friend list. Before implementing live deletion, independently verify on the authenticated account whether both relationship directions can be observed with trustworthy semantics and fresh post-read behavior; if not, develop a different verified read-only postcondition, not a guessed false default. No one-bot deletion canary or auto-cleanup until this is proven.
 
+
+
+## Oct30: Official PersonSummary two-direction alternative, 455 offline assertions
+
+Microsoft's GDK docs for **GET /users/{ownerId}/summary** state the owner can be `xuid(target)` while the authenticated caller is a separate account. The returned **PersonSummary** JSON documents both `isCallerFollowingTarget` and `isTargetFollowingCaller` as Boolean values:
+- <https://learn.microsoft.com/en-us/xbox/gdk/docs/reference/live/rest/uri/people/uri-usersowneridsummaryget?view=gdk-2604>
+- <https://learn.microsoft.com/en-us/gaming/gdk/docs/reference/live/rest/json/json-personsummary?view=gdk-2604>
+
+Unlike a legacy Person GET whose `isFollowingCaller` field is optional and does not guarantee the outgoing direction, PersonSummary offers a plausible exact target relation observation. It is **not yet real Xbox-tested** on MCGateway accounts and may have authorization/response differences. The summary body does **not** contain a signed target XUID; target association needs a strict HTTPS requested/final URI and actual authenticated account binding. A social SDK's `isFollowingCaller` value can be a backward-compatibility alias of `isFriend`, which is a further reason not to conflate Person and PersonSummary fields. Read the actual response and fail closed if either explicit field is missing, untyped, contradictory or unverifiable.
+
+Committed exact locally compiled Git blobs:
+- `tools/release160/McgatewayXboxSummaryReadOnlyV160.java` = `0917a726b25e9e58be54b58a82db4745576d8b3e`
+- `tools/release160/McgatewayXboxSummaryReadOnlyV160Test.java` = `3ddf22a12baf723febe2d2ed74726ab790907a9c`
+
+The **fake only** Java summary adapter consumes an injected `Wire` and never uses `HttpClient`, tokens, real Xbox requests or production code. It rejects wrong caller/target/session URI, malformed/missing/duplicated headers, stale/redirected/incomplete results, 404/401/403/429/503, missing/null/non-Boolean directions, ambiguous pagination, and mismatched Content-Length. It supports two-direction fake pre/post observations and intentional simulated DELETEs in its deterministic fixture harness; the live Xbox friend-removal command remains explicitly DENIED.
+
+Actual local Java21 compilation of all **six** test/source files: previous **167 + 191** assertions, plus **97** summary assertions, **455 total PASS**, exact fetched source hashes match `git hash-object`. CI workflow updated to run all three suites, **run conclusion not independently verified**. Do NOT present the existence of an artificial `Reply.boundAccount` field or `networkFresh` test flag as proof of real HTTP binding or freshness. The source still needs a strict raw JSON decoder and a verified real authenticated **GET-only** probe before any production command integration or canary. Never expose tokens, XUIDs, profile data, raw JSON bodies or Discord names in probe output.
+
+The next realistic deployment-independent step is to prepare a strictly bounded, source-only authenticated read probe design with exact request allowlist, no credentials in command args/logs, transport TLS/no-redirect enforcement and response-shape-only output. A live GET on any production bot would require separate owner approval. No auto-unpause.
