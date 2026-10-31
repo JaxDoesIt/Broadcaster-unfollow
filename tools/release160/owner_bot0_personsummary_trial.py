@@ -43,6 +43,10 @@ REVISIONS = {
 MARKER_BYTES = b"RELEASE160_BOT0_RESTART_HOLD_V1\n"
 MAX_OUTPUT = 1024 * 1024
 
+# Owner-confirmed live friend sync: enabled in both directions, interval 60s.
+# This is a bounded observation window, not proof a usable friend will appear.
+FRIEND_SYNC_WARMUP_SECONDS = 120
+
 class Unsafe(RuntimeError):
     pass
 
@@ -346,9 +350,21 @@ def main():
         print("BOT0 HOLD ACTIVE: moving only Bot0 to candidate.", flush=True)
         deployment_attempted = True
         recreate(context, proposed)
-        verified_boot(candidate_id, seconds=14)
+        print("BOT0 CANARY BOOTED: observing the configured 60s friend-sync interval before the single diagnostic.", flush=True)
+        # Auto friend sync starts after its first 60-second delay following
+        # FriendManager initialization. The original 14-second check raced it.
+        # Repeatedly verify THIS exact container/boot through the warmup; do
+        # not send exploratory console commands or make an extra Xbox request.
+        verified_boot(candidate_id, seconds=FRIEND_SYNC_WARMUP_SECONDS)
+        require(marker.exists() and not marker.is_symlink() and
+                marker.read_bytes() == MARKER_BYTES,
+                "Bot0 maintenance hold lost before diagnostic")
+        require(paused_cleanup(root), "cleanup unpaused during canary warmup")
+        paused_updates(root)
+        require(docker_inspect("container", "watchtower")["State"]["Running"] is False,
+                "Watchtower restarted during canary warmup")
         require(other_bots_unchanged(fleet), "other fleet container drift detected")
-        print("BOT0 CANARY BOOTED: issuing exactly one approved diagnostic command.", flush=True)
+        print("WARMUP VERIFIED: issuing exactly one approved diagnostic command.", flush=True)
         output = direct_one_shot(root)
         print(output, flush=True)
         success = True
