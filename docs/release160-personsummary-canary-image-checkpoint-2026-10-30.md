@@ -80,6 +80,14 @@ Date: 2026-10-30 CDT / 2026-10-31 UTC
 - **OUTSTANDING:** operator's live `/cleanup status` (paused flag, batch active, Bot0 active cleanup rows, open dispatch intents, console leases, count capture, restart reservation). No DB, production services, Docker images, or Xbox requests touched.
 - Future authorized trial must activate verified hold *before* Bot0 service recreation and use an independently reviewed console route, because the hold blocks Control Bot PTY dispatch. Do not activate hold merely to prove it works until the end-to-end invocation/rollback protocol is ready.
 
+## Operator live Discord cleanup status (PAUSED and drained for Bot0)
+- Operator's `/cleanup status` snapshot at approximately 7:32 PM local time: Mode `auto`; `Paused=Yes`; `Cleanup batch still running=No`.
+- Pending `9,322` with `9,321` ready; backlog tracking continues while cleanup is paused. Do **NOT** interpret backlog as running removal.
+- Last hour: `358` newly queued, `0` attempts, `0` confirmed, `0` uncertain.
+- Process-wide console lease: `No in this process`; Bot0 active cleanup row tasks `0`; Bot0 unresolved durable dispatch intents `0`; Bot0 console leases `No in this process`; exact friend-count capture `No in this process`; restart already reserved `No in this process`.
+- Live status itself explicitly says `Safe to stop Bot0/Control Bot: NOT ATTESTED` and `External Watchtower/updater/supervisor holds: NOT ATTESTED`. Preserve this qualification. Earlier separate checks showed Watchtower not running and updater JSON paused; both must be reconfirmed immediately before any live operation.
+- The report is an ephemeral snapshot, **not** durable permission to stop/recreate Bot0. A bounded maintenance hold, fresh recheck, safe console delivery and separately approved live deployment remain required.
+
 ## Safety and next gate
 - No Dell access, no Bot0 restart, no fleet restart, no Xbox API request, no database access, no friend cleanup, no GHCR test/stable promotion occurred.
 - Source probes never authorize deletion. Friend removal remains intentionally denied. Cleanup remains paused.
