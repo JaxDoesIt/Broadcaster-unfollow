@@ -12,7 +12,7 @@ This branch was deliberately created so a new assistant can start from **Git wit
 >
 > https://github.com/JaxDoesIt/Broadcaster-unfollow/blob/docs/release160-personsummary-continuation-2026-10-30/docs/release160-personsummary/START_HERE.md
 >
-> Read that page AND its RULEBOOK.md, STATUS_AND_EVIDENCE.md, NEXT_STEPS.md, ENDPOINT_RESEARCH.md and HANDOFF_TO_NEW_CHAT.md in full. Also consult the historical checkpoint if you need details.
+> Read that page AND its RULEBOOK.md, STATUS_AND_EVIDENCE.md, NEXT_STEPS.md, ENDPOINT_RESEARCH.md, CROSS_REPO_MAP.md and HANDOFF_TO_NEW_CHAT.md in full. Also consult the historical checkpoint if you need details.
 >
 > Treat Git as the source of truth. Audit current relevant branch state and successful CI, maintain the safety gates, and continue only **authorized and incomplete gates** in NEXT_STEPS. The exact-status V4 offline source, immutable image and rollback runner are already fully proven, so do not repeat them. Update the canonical docs as you finish work. Don't mistake historical "waiting for approval" stages for the current status.
 >
