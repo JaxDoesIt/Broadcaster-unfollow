@@ -350,7 +350,7 @@ def main():
         print("BOT0 HOLD ACTIVE: moving only Bot0 to candidate.", flush=True)
         deployment_attempted = True
         recreate(context, proposed)
-        print("BOT0 CANARY BOOTED: observing the configured 60s friend-sync interval before the single diagnostic.", flush=True)
+        print("BOT0 CANDIDATE RECREATED: verifying stable boot through friend-sync warmup.", flush=True)
         # Auto friend sync starts after its first 60-second delay following
         # FriendManager initialization. The original 14-second check raced it.
         # Repeatedly verify THIS exact container/boot through the warmup; do
