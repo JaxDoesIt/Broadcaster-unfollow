@@ -14,6 +14,27 @@ HELPER_TARGET = "core/src/main/java/com/rtm516/mcxboxbroadcast/core/McgatewaySoc
 CONSOLE = "bootstrap/standalone/src/main/java/com/rtm516/mcxboxbroadcast/bootstrap/standalone/StandaloneLoggerImpl.java"
 PINNED_CORE_BLOB = "4b4e7f201dfbfc8e1ed9dfbf765abefd498126bf"
 HELPER_ID = "public final class McgatewaySocialCountV160"
+PINNED_SESSION_BLOB = "3faaef8fda8e2737e7dad6e6631b53c42ea56482"
+EXPIRY_UPSTREAM = '''        if (friendSyncConfig.expiry().enabled()) {
+            scheduledThreadPool.scheduleWithFixedDelay(this::expireFriends, 10, friendSyncConfig.expiry().check(), TimeUnit.SECONDS);
+        }'''
+EXPIRY_OVERLAY = '''        // MCGATEWAY_RELEASE160_EXPIRY_HOLD: never schedule upstream removal.
+        // MCGateway owns friendship cleanup and Release160 has no reviewed
+        // deletion receipt contract. Keep every legacy friend intact.
+        logger.warn("MCGateway release160: upstream automatic friend expiry is disabled.");'''
+HEALTH_UPSTREAM = '''    public Logger logger() {
+        return logger;
+    }'''
+HEALTH_OVERLAY = '''    public Logger logger() {
+        return logger;
+    }
+
+    public String mcgatewayHealthLine() {
+        boolean rta = rtaWebsocket != null && rtaWebsocket.isOpen();
+        boolean httpSignaling = signaling != null && signaling.isActive();
+        boolean published = sessionInfo != null && sessionInfo.getHandleId() != null && !sessionInfo.getHandleId().isBlank();
+        return "MCGATEWAY_HEALTH_V160 initialized=" + initialized + " rta=" + rta + " httpSignaling=" + httpSignaling + " published=" + published;
+    }'''
 
 LIST_OLD = '''    public void listSessions() {
         coreLogger.info("Loading status of sessions...");
@@ -84,7 +105,7 @@ LIST_NEW = '''    public void listSessions() {
         }
     }'''
 
-CORE_ANCHOR = "    public SocialSummaryResponse socialSummary() {"
+CORE_ANCHOR = '    /**\n     * Get the social summary for the current user\n     * @return The current social summary\n     */\n    public SocialSummaryResponse socialSummary() {'
 CORE_INSERT = '''    // MCGATEWAY_ACCOUNTS_LIST_PRODUCER_V160: read only the summary that
     // accounts list already requested, but validate its status and field.
     // Nothing from this request is authoritative for admission or cleanup.
@@ -159,6 +180,20 @@ def patch(root: Path, helper_file: Path) -> bool:
     # only; it must still have the documented exact health marker.
     if "MCGATEWAY_HEALTH_V160 initialized=" not in original_core:
         raise ValueError("original health guard missing")
+    # Reconstruct both exact pinned upstream source blobs by reverting only
+    # the original production overlay and our own known additive blocks.
+    session_before_us = new_session.replace(LIST_NEW, LIST_OLD, 1)
+    if session_before_us.count(EXPIRY_OVERLAY) != 1:
+        raise ValueError("unexpected baseline expiry patch")
+    raw_session = session_before_us.replace(EXPIRY_OVERLAY, EXPIRY_UPSTREAM, 1)
+    if git_blob_sha1(raw_session) != PINNED_SESSION_BLOB:
+        raise ValueError("upstream SessionManager Git blob mismatch")
+
+    if original_core.count(HEALTH_OVERLAY) != 1:
+        raise ValueError("unexpected baseline health patch")
+    raw_core = original_core.replace(HEALTH_OVERLAY, HEALTH_UPSTREAM, 1)
+    if git_blob_sha1(raw_core) != PINNED_CORE_BLOB:
+        raise ValueError("upstream SessionManagerCore Git blob mismatch")
     if old_helper not in ("", helper):
         raise ValueError("different helper already exists")
 
