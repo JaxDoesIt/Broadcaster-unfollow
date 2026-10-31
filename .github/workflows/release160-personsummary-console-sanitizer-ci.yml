@@ -1,0 +1,36 @@
+name: Release160 Bot0 one-shot console result sanitizer (offline only)
+
+on:
+  push:
+    branches:
+      - build/release160-personsummary-canary-2026-10-30
+    paths:
+      - 'tools/release160/personsummary_console_result.py'
+      - 'tools/release160/test_personsummary_console_result.py'
+      - '.github/workflows/release160-personsummary-console-sanitizer-ci.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  offline-redaction-proof:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Verify offline-only parser, then run mocked adversarial cases
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B -m py_compile tools/release160/personsummary_console_result.py \
+            tools/release160/test_personsummary_console_result.py
+          ! grep -Eq '\b(import|from) (subprocess|socket|requests|urllib|http|os|docker)\b' \
+            tools/release160/personsummary_console_result.py
+          python3 -B tools/release160/test_personsummary_console_result.py
+          echo 'OFFLINE-ONLY PASS: no Docker, no production host, no Xbox GET, no cleanup.'
