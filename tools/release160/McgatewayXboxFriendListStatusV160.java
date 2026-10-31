@@ -35,6 +35,7 @@ public final class McgatewayXboxFriendListStatusV160 {
     private static final int MAX_BYTES = 2 * 1024 * 1024;
     private static final int MAX_PEOPLE = 2000;
     private static final int MAX_FIELDS = 1000;
+    private static final int MAX_JSON_NODES = 500_000, MAX_DEPTH = 24;
     private static final Duration TIMEOUT = Duration.ofSeconds(7);
     private static final URI FRIENDS =
         URI.create("https://peoplehub.xboxlive.com/users/me/people/friends");
@@ -158,6 +159,7 @@ public final class McgatewayXboxFriendListStatusV160 {
             if (reader.peek() != JsonToken.BEGIN_OBJECT)
                 return fail("list_invalid");
             reader.beginObject();
+            Counter budget = new Counter();
             Set<String> rootFields = new HashSet<>();
             int fieldCount = 0, people = 0;
             boolean sawPeople = false, incomplete = false;
@@ -183,7 +185,7 @@ public final class McgatewayXboxFriendListStatusV160 {
                             if (!personFields.add(name)) return fail("list_invalid");
                             if (name.equals("xuid") && reader.peek() == JsonToken.STRING)
                                 xuid = reader.nextString();
-                            else reader.skipValue();
+                            else skipStrict(reader, 0, budget);
                         }
                         reader.endObject();
                         if (chosen == null && validXuid(xuid) && !xuid.equals(self))
@@ -195,10 +197,10 @@ public final class McgatewayXboxFriendListStatusV160 {
                     else if (reader.peek() == JsonToken.STRING) {
                         if (!reader.nextString().isBlank()) incomplete = true;
                     } else {
-                        reader.skipValue();
+                        skipStrict(reader, 0, budget);
                         incomplete = true;
                     }
-                } else reader.skipValue();
+                } else skipStrict(reader, 0, budget);
             }
             reader.endObject();
             if (reader.peek() != JsonToken.END_DOCUMENT || !sawPeople)
@@ -209,6 +211,38 @@ public final class McgatewayXboxFriendListStatusV160 {
             return new Selection(chosen, "list_ready");
         } catch (Exception ignored) {
             return fail("list_invalid");
+        }
+    }
+
+    private static final class Counter { int nodes; }
+
+    // Strictly consume unknown metadata. Reject nested duplicate keys and
+    // bound complexity rather than allowing skipValue() to silently accept
+    // ambiguous JSON in an otherwise valid friend-list snapshot.
+    private static void skipStrict(JsonReader reader, int depth, Counter budget)
+            throws IOException {
+        if (++budget.nodes > MAX_JSON_NODES || depth > MAX_DEPTH)
+            throw new IOException("friend-list JSON complexity exceeded");
+        switch (reader.peek()) {
+            case BEGIN_OBJECT -> {
+                reader.beginObject();
+                Set<String> seen = new HashSet<>();
+                while (reader.hasNext()) {
+                    if (!seen.add(reader.nextName())) throw new IOException("duplicate nested JSON name");
+                    skipStrict(reader, depth + 1, budget);
+                }
+                reader.endObject();
+            }
+            case BEGIN_ARRAY -> {
+                reader.beginArray();
+                while (reader.hasNext()) skipStrict(reader, depth + 1, budget);
+                reader.endArray();
+            }
+            case STRING -> reader.nextString();
+            case NUMBER -> reader.nextString();
+            case BOOLEAN -> reader.nextBoolean();
+            case NULL -> reader.nextNull();
+            default -> throw new IOException("invalid friend-list JSON token");
         }
     }
 
