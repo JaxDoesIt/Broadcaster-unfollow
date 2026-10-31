@@ -75,7 +75,7 @@ jobs:
       - name: Download only the verified standalone JAR
         uses: actions/download-artifact@v4
         with:
-          name: release160-friendlist-status-v3-proof-jar
+          name: release160-friendlist-http-code-v4-proof-jar
           run-id: 41161780744
           github-token: ${{ github.token }}
           repository: JaxDoesIt/Broadcaster-unfollow
