@@ -1,0 +1,6 @@
+# Offline-proven, nonmutating friend-list HTTP status + PersonSummary diagnostic.
+# Pin exact original Release160 image digest and tested V3 standalone JAR.
+# No Docker mutation is performed on the Dell by image-build CI.
+ARG MCGATEWAY_BASE_IMAGE
+FROM ${MCGATEWAY_BASE_IMAGE}
+COPY --chown=app:app bootstrap/standalone/build/libs/MCXboxBroadcastStandalone.jar /opt/app/MCXboxBroadcastStandalone.jar
