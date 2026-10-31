@@ -4,6 +4,14 @@
 
 > **LATEST, October 31 2026 CDT:** Four authorized **Bot0-only** live trials were completed. The fourth V4 probe returned `PERSONSUMMARY_DIAGNOSTIC result=OBSERVED http=unverified fields=list_http_400 can_authorize_removal=false`, proving that the **friend-list GET received HTTP 400 Bad Request**; it does **not** reveal the error reason. The runner verified original immutable Bot0 image restoration and maintenance-hold clearance; the owner independently confirmed **Bot0 works for players afterward**. Cleanup was still paused at recovery. **All fourth-trial approval is spent. No fifth trial is authorized.**
 
+## Latest continuation (October 31, source-only)
+
+The dedicated private MCGateway fastpath has now completed the old/new contract matrix and created a newer **display-only Release160 `accounts list` parser**, based on the already-existing upstream command, rather than promoting the three-GET PeopleHub count candidate. The source-only adapter is on private `JaxDoesIt/MCGateway:fix/release160-count-display-adapter-2026-10-31`, with details in `docs/operations/RELEASE160_ACCOUNTS_LIST_DISPLAY_ADAPTER_2026-10-31.md` and updated `docs/CURRENT_STATE.md` / `docs/TODO.md` on that branch. Four local fake-log test groups passed; Git hashes match local tested files, but **GitHub Actions push-run CI has not been verified**. This parser is **NOT installed, wired into Control Bot, or authoritative for capacity or cleanup**.
+
+The upstream `SessionManager.listSessions()` prints `Friends: N/1000` from `socialSummary().targetFriendCount()`, but upstream does not strictly verify HTTP status or missing count fields, so the candidate explicitly refuses zero and marks positive counts provisional. The public `friendcountv2` 3-GET candidate's additional HTTP400/page-hint source-only tests are on `fix/release160-friendcount-pagination-proof-2026-10-31`, also **CI UNVERIFIED**. Do not infer the actual candidate endpoint returned 400 or that either candidate can be deployed.
+
+**New-chat default:** Continue from the private latest branch's documentation for the count/display repair, while retaining this public V4 rulebook as the separate Xbox request/rollback diagnostic evidence. Next is independent CI status proof and review of sanitized real log framing, then a fresh isolated nonauthoritative integration gate. No fifth trial, no production modification, no friend removal or cleanup unpause is authorized.
+
 ## Read in this order
 
 1. **[RULEBOOK.md](./RULEBOOK.md)**: nonnegotiable safety, execution limits, approvals, exact source/recovery proof, Git workflow, and the standard of testing.
