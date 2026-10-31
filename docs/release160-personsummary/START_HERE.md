@@ -14,6 +14,8 @@
 6. **[HANDOFF_TO_NEW_CHAT.md](./HANDOFF_TO_NEW_CHAT.md)**: copyable handoff text and how another assistant should recover context directly from this Git branch.
 7. **[Historical chronological checkpoint](../release160-personsummary-canary-image-checkpoint-2026-10-30.md)**: older cumulative findings and experimental states. **Some sections are historical** (e.g., "not deployed" or "awaiting approval" before completed trials). When in conflict, this START_HERE and the current STATUS_AND_EVIDENCE take precedence.
 
+**Current engineering priority:** [REUSE_FIRST_REPAIR_STRATEGY.md](./REUSE_FIRST_REPAIR_STRATEGY.md) explains why we should adapt the working Release154 friend-count and cleanup application to Release160 using narrow adapters, rather than assume the HTTP400 on a different read-only endpoint means removal is broken. The next step is a source-only old/new contract matrix and reuse of existing Release160 count-proof work. No production changes or fifth trial are approved.
+
 ## Goal
 
 Diagnose the Release 160 Xbox friendship relationship semantics and **prove, without risking players or friendships**, which Xbox GET endpoint and response fields can safely support downstream MCGateway friend-cleanup correctness. The current narrower blocker: the fourth GET-only friend-list probe definitively returned **HTTP 400 Bad Request**, but the reason and supported request contract are unknown. PersonSummary schema was never observed in any of the three trials. **No friendship deletion is justified.**
