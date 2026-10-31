@@ -1,0 +1,186 @@
+name: Release160 V3 friend-list status immutable image (GitHub only)
+
+on:
+  push:
+    branches:
+      - build/release160-friendlist-status-v3-2026-10-30
+    paths:
+      - '.github/workflows/release160-friendlist-status-v3-image-ci.yml'
+      - 'tools/release160/Dockerfile.friendlist-status-v3'
+
+permissions:
+  contents: read
+  actions: read
+  packages: write
+
+concurrency:
+  group: release160-friendlist-status-v3-immutable-image
+  cancel-in-progress: false
+
+jobs:
+  build-isolated-canary-image:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      BASE_TAG: ghcr.io/jaxdoesit/mcgateway-broadcast@sha256:1b6e1dad197b82a97546bf352cadb5426eb7537fee9a24eb9160e8b00f5a3e55
+      CANDIDATE_TAG: ghcr.io/jaxdoesit/mcgateway-broadcast:release-160-friendlist-status-v3-canary-20261031-04d7ae5
+      VERIFIED_PROOF_SHA: 04d7ae5906a50bcd8923813f76dcc4521ffea72a
+      VERIFIED_RUN_ID: '41160055385'
+    steps:
+      - name: Checkout Dockerfile only (no checkout of mutable upstream source)
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Verify exact source proof succeeded and unique immutable artifact exists
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT="https://api.github.com/repos/JaxDoesIt/Broadcaster-unfollow"
+          # Bounded wait, no deployment or mutation. Fail closed on timeout/failure.
+          COMPLETED=false
+          for attempt in $(seq 1 60); do
+            RUN_JSON="$(curl --fail --silent --show-error --location --retry 2 \
+              -H "Authorization: Bearer ${GH_TOKEN}" \
+              -H "Accept: application/vnd.github+json" \
+              "${ROOT}/actions/runs/${VERIFIED_RUN_ID}")"
+            jq -e --arg sha "$VERIFIED_PROOF_SHA" \
+              '.head_sha == $sha and .head_branch == "fix/release160-friendlist-status-diagnostic-2026-10-30" and
+               .name == "Release160 V3 friend-list HTTP diagnostic source proof (offline)"' \
+              <<< "$RUN_JSON" >/dev/null
+            if jq -e '.status == "completed"' <<< "$RUN_JSON" >/dev/null; then
+              jq -e '.conclusion == "success"' <<< "$RUN_JSON" >/dev/null
+              COMPLETED=true
+              break
+            fi
+            sleep 15
+          done
+          test "$COMPLETED" = true
+          ART_JSON="$(curl --fail --silent --show-error --location --retry 2 \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            "${ROOT}/actions/runs/${VERIFIED_RUN_ID}/artifacts")"
+          jq -e '
+            ([.artifacts[] | select(
+              .id == 13026612719 and
+              .name == "release160-friendlist-status-v3-proof-jar" and
+              .digest == "sha256:6c054eec37a11194dc712b49fdd32efb9df327546a0a4ee32dd9131161d78ec0" and
+              .expired == false
+            )] | length) == 1
+          ' <<< "$ART_JSON" >/dev/null
+          echo "Exact successful source proof and one unexpired integrity-tagged artifact verified."
+
+      - name: Download only the verified standalone JAR
+        uses: actions/download-artifact@v4
+        with:
+          name: release160-personsummary-readonly-canary-jar
+          run-id: 41160055385
+          github-token: ${{ github.token }}
+          repository: JaxDoesIt/Broadcaster-unfollow
+          path: bootstrap/standalone/build/libs
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Verify JAR checksum and required canary classes
+        shell: bash
+        run: |
+          set -euo pipefail
+          JAR="bootstrap/standalone/build/libs/MCXboxBroadcastStandalone.jar"
+          test -s "$JAR"
+          test -s "$JAR.sha256"
+          sha256sum -c "$JAR.sha256"
+          jar tf "$JAR" > "$RUNNER_TEMP/canary-jar-entries.txt"
+          grep -Fqx 'com/rtm516/mcxboxbroadcast/core/McgatewayXboxPersonSummaryProbeV160.class' \
+            "$RUNNER_TEMP/canary-jar-entries.txt"
+          grep -Fqx 'com/rtm516/mcxboxbroadcast/core/McgatewayXboxFriendListStatusV160.class' \
+            "$RUNNER_TEMP/canary-jar-entries.txt"
+          grep -Fqx 'com/rtm516/mcxboxbroadcast/bootstrap/standalone/StandaloneLoggerImpl.class' \
+            "$RUNNER_TEMP/canary-jar-entries.txt"
+          echo "Reviewed V3 JAR passed integrity and class checks."
+
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Pin and verify original Release160 image before adding one JAR layer
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker pull "$BASE_TAG"
+          REV="$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' "$BASE_TAG")"
+          UPSTREAM="$(docker image inspect --format '{{ index .Config.Labels "io.mcgateway.upstream-sha" }}' "$BASE_TAG")"
+          VARIANT="$(docker image inspect --format '{{ index .Config.Labels "io.mcgateway.overlay-variant" }}' "$BASE_TAG")"
+          test "$REV" = "f0da506d12074d5c99666d7a8ef0f73cdb6d6f58"
+          test "$UPSTREAM" = "798d8b3a6107359643b525f1c9c3303c020ae09b"
+          test "$VARIANT" = "relay-audit-expiry-held-v2"
+          BASE_REF="$BASE_TAG"
+          test "$BASE_REF" = "ghcr.io/jaxdoesit/mcgateway-broadcast@sha256:1b6e1dad197b82a97546bf352cadb5426eb7537fee9a24eb9160e8b00f5a3e55"
+          echo "BASE_REF=$BASE_REF" >> "$GITHUB_ENV"
+          echo "Original base verified by exact immutable digest."
+
+      - name: Refuse candidate tag overwrite or unknown registry state
+        shell: bash
+        run: |
+          set -euo pipefail
+          if docker manifest inspect "$CANDIDATE_TAG" > "$RUNNER_TEMP/canary-tag.out" 2> "$RUNNER_TEMP/canary-tag.err"; then
+            echo "REFUSED: immutable canary image already exists."
+            exit 1
+          fi
+          if ! grep -Eiq '(manifest unknown|no such manifest|not found|404)' "$RUNNER_TEMP/canary-tag.err"; then
+            echo "REFUSED: registry did not prove the candidate tag absent."
+            exit 1
+          fi
+
+      - name: Build candidate from pinned baseline, adding the reviewed JAR only
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker buildx build --load --platform linux/amd64 \
+            --file tools/release160/Dockerfile.friendlist-status-v3 \
+            --build-arg "MCGATEWAY_BASE_IMAGE=$BASE_REF" \
+            --tag "$CANDIDATE_TAG" \
+            --label "org.opencontainers.image.revision=$VERIFIED_PROOF_SHA" \
+            --label "io.mcgateway.base-image=$BASE_REF" \
+            --label 'io.mcgateway.overlay-variant=relay-audit-expiry-held-v2-friendlist-status-v3' \
+            --label 'io.mcgateway.production-ready=false' \
+            --label 'io.mcgateway.friend-removal-enabled=false' \
+            --label 'io.mcgateway.friend-mutations-disabled=true' \
+            .
+          test "$(docker image inspect --format '{{ .Config.User }}' "$CANDIDATE_TAG")" = "app:app"
+          test "$(docker image inspect --format '{{ .Config.WorkingDir }}' "$CANDIDATE_TAG")" = "/opt/app/config"
+          EXPECTED="$(sha256sum bootstrap/standalone/build/libs/MCXboxBroadcastStandalone.jar | awk '{print $1}')"
+          ACTUAL="$(docker run --rm --network none --read-only \
+            --entrypoint sha256sum "$CANDIDATE_TAG" \
+            /opt/app/MCXboxBroadcastStandalone.jar | awk '{print $1}')"
+          test "$ACTUAL" = "$EXPECTED"
+          echo "Isolated image contains exactly the verified JAR; app never executed."
+
+      - name: Publish only new immutable candidate tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          if docker manifest inspect "$CANDIDATE_TAG" > "$RUNNER_TEMP/canary-recheck.out" 2> "$RUNNER_TEMP/canary-recheck.err"; then
+            echo "REFUSED: candidate tag appeared before publish."
+            exit 1
+          fi
+          if ! grep -Eiq '(manifest unknown|no such manifest|not found|404)' "$RUNNER_TEMP/canary-recheck.err"; then
+            echo "REFUSED: cannot establish candidate tag still absent."
+            exit 1
+          fi
+          docker push "$CANDIDATE_TAG"
+          docker buildx imagetools inspect "$CANDIDATE_TAG"
+          {
+            echo "### Prepared only, not deployed"
+            echo "- Immutable canary tag: \`$CANDIDATE_TAG\`"
+            echo "- Original rollback image: \`$BASE_REF\`"
+            echo "- Source-proof commit: \`$VERIFIED_PROOF_SHA\`"
+            echo "- No test/stable retagging, no Dell connection, no Xbox requests, no production restart, no cleanup"
+          } >> "$GITHUB_STEP_SUMMARY"
