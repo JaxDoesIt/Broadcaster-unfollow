@@ -28,6 +28,13 @@ Date: 2026-10-30 CDT / 2026-10-31 UTC
 - Read-only inspection only. This is an operator-reported local snapshot, not a live GitHub CI test. No implication about uptime, network connectivity, or Xbox schema is made.
 - Remaining before any approved Bot0-only canary: recoverable container config/runtime reconstruction, supervisor and watchtower behavior, health baseline, and a separate explicit deployment authorization. Friend cleanup must remain paused.
 
+## Operator Bot0 Compose management preflight (PASSED; reconstruction still held)
+- Operator-provided local Docker inspect: Bot0 `running=True`, restart policy `unless-stopped`, `AutoRemove=False`, user `app:app`, workdir `/opt/app/config`, network `mcgateway_default`.
+- One read/write bind mount at container target `/opt/app/config`; its host-side source was deliberately not disclosed.
+- Docker Compose labels present. Control Bot systemd service `active/running`; Watchtower container `running=False`.
+- Read-only observation; no proof that Compose files/env are intact, no reconstruction test, and no proof Control Bot will ignore a planned Bot0-only deployment.
+- Before deployment: validate the Compose project/service source-file presence, effective service identity, and isolation of a Bot0-only change, without logging environment values or mount sources; then obtain a separate explicit live-test approval.
+
 ## Safety and next gate
 - No Dell access, no Bot0 restart, no fleet restart, no Xbox API request, no database access, no friend cleanup, no GHCR test/stable promotion occurred.
 - Source probes never authorize deletion. Friend removal remains intentionally denied. Cleanup remains paused.
