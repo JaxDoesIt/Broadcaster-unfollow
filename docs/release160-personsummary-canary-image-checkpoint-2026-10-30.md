@@ -44,6 +44,22 @@ Date: 2026-10-30 CDT / 2026-10-31 UTC
 - This was read-only; no live service was stopped/recreated, no Docker image pulled, no cleanup or Xbox requests.
 - Remaining for a future separately authorized live step: inspect whether currently resolved Compose tag maps to installed image locally, validate a Bot0-only temporary image override while preserving original Compose files, ensure Control Bot and other supervisors will not interfere, and have a bounded rollback procedure. No fleet rollout implied.
 
+## Operator Compose image resolution (PASSED)
+- Read-only local verification confirms the effective Compose image is already present on the Dell and its image ID equals Bot0's running image ID.
+- Bot0 remains running, restart count 0 at the observation; no image pulls, Compose changes, restarts, Xbox calls or cleanup operations.
+- This closes the *current Compose tag resolution* question. It does **not** turn the tag into an immutable reference: image digests remain required for trial/rollback.
+
+## Staged Bot0-only deployment and rollback procedure (NOT AUTHORIZED, NOT EXECUTED)
+1. Immediately before any future live action, reconfirm Bot0 original image ID/digest, health, 16-bot fleet status, Control Bot's interaction with Bot0 and friend-cleanup pause. Abort on unexpected state or supervisor conflict. Do not restart the full fleet.
+2. Pull and verify only the canary image by immutable digest `ghcr.io/jaxdoesit/mcgateway-broadcast@sha256:6877f7e59118a5d48ab866f8db66bbfd156f6e336252842297f80a31665f74e1`. Original rollback image is `ghcr.io/jaxdoesit/mcgateway-broadcast@sha256:1b6e1dad197b82a97546bf352cadb5426eb7537fee9a24eb9160e8b00f5a3e55`. Do not modify the `:stable`/`:test` tags.
+3. Preserve the original Compose file untouched. Prepare a temporary, restricted-permissions override containing only the `mcgatewaybot-docker` service's exact candidate image reference. Validate the fully resolved merged Compose service and prove all other services unchanged, environment and bind values unprinted. Confirm all host-side mount paths remain the same privately.
+4. After explicit owner approval and supervisor/cleanup guard, run a *single Bot0 service* recreation with `--no-deps`, no build, no image auto-pull, and the candidate digest via the approved temporary override; no other container recreation. This does briefly interrupt Bot0 players. Do not enable cleanup.
+5. Observe startup, health, real hub connectivity, and restart/timeout signals. If failed or if independent control paths unexpectedly change the container, restore the exact original image digest via a temporary Compose override for **Bot0 only**. Reconfirm Bot0 health and all other 15 bots. Do not depend on a mutable tag for rollback.
+6. A separate, explicitly approved operator invocation of console `personsummaryprobe <32-lowercase-hex-nonce>` is allowed at most once per process. The command selects an existing in-memory cached friend and performs one GET with a bounded timeout and no retries, and prints only the coarse sanitized schema verdict. Do not supply a XUID or print any Xbox authentication. No friendship removal follows automatically.
+7. Restore Bot0 to the verified original image digest after the test unless the owner separately authorizes a different state. Remove temporary overrides only after restoration and verification. Keep original Compose file, database, cleanup state, other 15 bots, and release channels unchanged.
+
+**Unverified before execution:** Control Bot maintenance/health supervision behavior for a planned Bot0 recreation; exact Xbox command delivery path; current cleanup paused state; successful rollback rehearsal. Source CI and Docker registry checks do not prove these live details. Therefore, production authorization is **NOT YET REQUESTED** until these are addressed in an executable gated procedure.
+
 ## Safety and next gate
 - No Dell access, no Bot0 restart, no fleet restart, no Xbox API request, no database access, no friend cleanup, no GHCR test/stable promotion occurred.
 - Source probes never authorize deletion. Friend removal remains intentionally denied. Cleanup remains paused.
