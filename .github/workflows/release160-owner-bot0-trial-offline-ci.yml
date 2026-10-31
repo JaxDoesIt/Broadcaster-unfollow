@@ -37,4 +37,5 @@ jobs:
             tools/release160/test_personsummary_console_result.py
           python3 -B tools/release160/test_personsummary_console_result.py
           python3 -B tools/release160/test_owner_bot0_personsummary_trial.py
+          sha256sum tools/release160/owner_bot0_personsummary_trial.py tools/release160/personsummary_console_result.py
           echo 'PASS: MOCK-ONLY TESTS, no production connections, Docker changes or Xbox requests.'
