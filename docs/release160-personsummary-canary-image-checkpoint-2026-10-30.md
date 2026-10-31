@@ -88,6 +88,13 @@ Date: 2026-10-30 CDT / 2026-10-31 UTC
 - Live status itself explicitly says `Safe to stop Bot0/Control Bot: NOT ATTESTED` and `External Watchtower/updater/supervisor holds: NOT ATTESTED`. Preserve this qualification. Earlier separate checks showed Watchtower not running and updater JSON paused; both must be reconfirmed immediately before any live operation.
 - The report is an ephemeral snapshot, **not** durable permission to stop/recreate Bot0. A bounded maintenance hold, fresh recheck, safe console delivery and separately approved live deployment remain required.
 
+## One-shot console output sanitizer: mocked CI PASSED
+- Added pure, offline Python result sanitizer `tools/release160/personsummary_console_result.py`; it does not call Docker, Xbox, HTTP or the Dell. It accepts only one nonce-matched diagnostic marker, allowed coarse HTTP/schema categories and the literal `can_authorize_removal=false`. It never echoes raw console content, usernames, XUIDs or authorization material.
+- Adversarial unit tests `tools/release160/test_personsummary_console_result.py` cover unrelated secret-bearing logs, color escapes, duplicate markers, nonce mismatch, unconfirmed transport, bad tokens, oversized/invalid output and redaction invariants.
+- GitHub Actions run `41150811644` completed successfully: https://github.com/JaxDoesIt/Broadcaster-unfollow/actions/runs/41150811644.
+- **Not equivalent to a live transport test.** The reviewed Control Bot PTY source `components/control-bot/lib/docker-console-pty.py` Git blob is `64c2b0d1803c5e75dd80b37cca2cba99de16ecc2` and its support module `bounded_console_output.py` is `7633fe7e4a434e42cbcbefa4cc41458c18661ee5`. This owner-controlled direct transport can in principle bypass CB's held console path; do not run it before checking installed copies, Bot0 TTY and obtaining separate explicit approval.
+- The future live command requires **one** schema GET only when the console one-shot command reaches the application. Ordinary broadcaster startup/rejoin will also cause its normal network traffic: do not claim the entire Bot0 trial makes only one Xbox request. Do not disclose raw PTY console output.
+
 ## Safety and next gate
 - No Dell access, no Bot0 restart, no fleet restart, no Xbox API request, no database access, no friend cleanup, no GHCR test/stable promotion occurred.
 - Source probes never authorize deletion. Friend removal remains intentionally denied. Cleanup remains paused.
