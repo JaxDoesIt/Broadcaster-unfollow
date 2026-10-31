@@ -81,6 +81,14 @@ public final class McgatewayXboxFriendListStatusV160Test {
         }) {
             reason("list_http_" + code, code, "{\"private\":\"" + SECRET + "\"}");
         }
+        // Stress every possible non-special HTTP code, not just examples.
+        for (int status = 100; status <= 499; status++) {
+            if (status == 200 || status == 401 || status == 403 || status == 429)
+                continue;
+            reason("list_http_" + status, status, "{\"error\":\"" + SECRET + "\"}");
+        }
+        for (int status = 500; status <= 599; status++)
+            reason("list_server", status, "{}");
         for (int status : new int[] {-1, 0, 99, 600, 999}) {
             reason("list_other", status, "{}");
         }
