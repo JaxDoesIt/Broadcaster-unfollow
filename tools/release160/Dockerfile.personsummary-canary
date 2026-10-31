@@ -1,0 +1,6 @@
+# Build-only one-shot GET diagnostic candidate.
+# The CI workflow supplies an exact digest for the existing Release160 base.
+# This layer changes only the standalone application JAR.
+ARG MCGATEWAY_BASE_IMAGE
+FROM ${MCGATEWAY_BASE_IMAGE}
+COPY --chown=app:app bootstrap/standalone/build/libs/MCXboxBroadcastStandalone.jar /opt/app/MCXboxBroadcastStandalone.jar
