@@ -111,6 +111,17 @@ Date: 2026-10-30 CDT / 2026-10-31 UTC
 - A trial causes a brief Bot0 interruption and normal broadcaster Xbox reconnect traffic. The diagnostic allows at most one additional Xbox relationship GET; there is no friend removal.
 - The operator may approve deployment and the GET together only after seeing the bounded procedure and risks. **NO LIVE ACTION HAS BEEN AUTHORIZED OR EXECUTED.**
 
+## Owner authorized Bot0-only live trial: operator runner prepared, NOT YET EXECUTED
+- Owner explicitly approved Bot0-only temporary replacement, one diagnostic GET and restoration to original image.
+- Runner `tools/release160/owner_bot0_personsummary_trial.py`, and allowlist-only sanitizer `tools/release160/personsummary_console_result.py`, pinned to tested source commit `668773a50f4f627d836154c4a1ed7b914a39483d`.
+- Offline CI https://github.com/JaxDoesIt/Broadcaster-unfollow/actions/runs/41152033299 **completed success**. Includes fake Docker/Compose tests, forced simulated failed canary boot and rollback, private file hold, single target scope, redaction and never-live HTTP/Docker.
+- GitHub-runner SHA-256: runner `55d9ecc9eae3e66f56e1cbd3e8c90ec2b2708b71bd8ce6f0fb1f32f56620cc07`; sanitizer `c5e3256a7305ef35e746b0f9c22df926183443aa5c623b93176c5301a15cd17b`.
+- Before executing, owner must retrieve both source files via full immutable commit URL and verify SHA-256. Do not execute a mutable branch version or pipe remote content into a shell.
+- Runner rechecks exact active Control Bot source blobs, persistent cleanup pause (SQLite read-only), updater pause/staged rollout, stopped Watchtower, full 16-bot fleet, original image identity, Bot0 TTY, Compose service/override invariance; only then pulls exact candidate digest. Abort on uncertain evidence.
+- Runner creates a private Bot0-only maintenance hold, then uses a private one-service Compose digest override for candidate, observes stable container, dispatches one PTY command outside the held CB route, redacts output, restores original image digest and confirms stable process/unchanged other 15. If recovery is not proven, leave hold active and require manual review. The original Compose file, stable/test tags and cleanup state are never modified.
+- Recovery verified here means the original image is running without observed restart/OOM during the bounded local observation; it does **not** prove a real Xbox/Hub join. Operator must check actual player connectivity after execution.
+- Authorization is documented, but **NO Dell COMMAND HAS BEEN EXECUTED BY THE ASSISTANT** and no live outcome has been claimed.
+
 ## Safety and next gate
 - No Dell access, no Bot0 restart, no fleet restart, no Xbox API request, no database access, no friend cleanup, no GHCR test/stable promotion occurred.
 - Source probes never authorize deletion. Friend removal remains intentionally denied. Cleanup remains paused.
