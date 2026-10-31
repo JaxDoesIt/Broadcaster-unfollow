@@ -20,6 +20,10 @@ Research date: 2026-10-30 CDT / 2026-10-31 UTC. Microsoft docs show last-updated
 - [Microsoft GDK: GET (/users/{ownerId}/people/{targetid})](https://learn.microsoft.com/en-us/gaming/gdk/docs/reference/live/rest/uri/people/uri-usersowneridpeopletargetidget?view=gdk-2604) documents an individual people-relationship resource and possible 404 when a target is not found. This is **not** a definitive 404 explanation for the different friend-list collection endpoint.
 - **Unverified:** no authoritative current reference was established in this review specifically documenting the pinned `peoplehub.xboxlive.com/users/me/people/friends` request's 2026 behavior or response code. It may be supported, gated, deprecated, or other; do not assert any one.
 
+## Additional data-integrity risk if an endpoint migration is later proposed
+
+**MEDIUM:** Microsoft's documented `/users/me/people` route supports `startIndex`, `maxItems`, and returns `totalCount`. The current V3/V4 source helper rejects common continuation markers but does **not** compare any `totalCount` to the number of entries received. A page containing `people=[]` and `totalCount>0` could otherwise be misread as a truly empty overall people collection. Do not use the existing `list_empty` classification as authoritative proof of a fully enumerated collection when migrating to an endpoint that can paginate without a continuation marker. Future list-contract work must mock partial pages and avoid treating them as complete; absolutely no cleanup decisions based on incomplete lists.
+
 ## Recommended next diagnostic decision
 
 1. Retain the exact current `peoplehub` URL and version-7 request for the **first exact-status diagnostic patch**, to isolate the unknown variable. Any endpoint/contract/header change becomes a distinct experiment and requires independent source/CI proof.
