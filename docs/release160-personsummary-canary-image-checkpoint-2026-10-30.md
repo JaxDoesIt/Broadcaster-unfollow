@@ -21,8 +21,15 @@ Date: 2026-10-30 CDT / 2026-10-31 UTC
 - Built from baseline digest by replacing only `/opt/app/MCXboxBroadcastStandalone.jar`; image JAR checksum matched the original tested JAR; app was never started by this CI
 - The workflow only writes the unique candidate tag. Registry-wide immutability is not asserted: pin any future test or recovery by the exact digest.
 
+## Owner-witnessed Bot0 read-only identity gate (PASSED)
+- Operator's latest local `docker inspect` report: `org.opencontainers.image.revision` = MATCH; `io.mcgateway.upstream-sha` = MATCH; `io.mcgateway.overlay-variant` = MATCH.
+- Local `RepoDigests` includes original base digest `sha256:1b6e1dad197b82a97546bf352cadb5426eb7537fee9a24eb9160e8b00f5a3e55`: MATCH.
+- Bot0 container reports `running=True`, `OOMKilled=False`, `RestartCount=0` at inspection.
+- Read-only inspection only. This is an operator-reported local snapshot, not a live GitHub CI test. No implication about uptime, network connectivity, or Xbox schema is made.
+- Remaining before any approved Bot0-only canary: recoverable container config/runtime reconstruction, supervisor and watchtower behavior, health baseline, and a separate explicit deployment authorization. Friend cleanup must remain paused.
+
 ## Safety and next gate
 - No Dell access, no Bot0 restart, no fleet restart, no Xbox API request, no database access, no friend cleanup, no GHCR test/stable promotion occurred.
 - Source probes never authorize deletion. Friend removal remains intentionally denied. Cleanup remains paused.
-- Before any live canary: perform a read-only Dell verification of active Bot0 container image identity and actual base digest; prepare exact-digest recovery; verify live health and operator-only one-shot console route; require separate explicit owner approval for Bot0-only deployment and a single Xbox GET.
+- Before any live canary: Bot0 active image and base digest verified in the operator's read-only Dell check; next inspect container reconstruction settings and prepare exact-digest recovery; verify live health and operator-only one-shot console route; require separate explicit owner approval for Bot0-only deployment and a single Xbox GET.
 - After authorized Bot0-only canary: inspect only redacted `MCGATEWAY_PERSONSUMMARY_SCHEMA_V160` result and decide the next contract review; do not remove friends or roll out to the remaining 15 bots as a consequence of schema evidence alone.
