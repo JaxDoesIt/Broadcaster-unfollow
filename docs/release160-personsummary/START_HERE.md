@@ -2,7 +2,7 @@
 
 **Canonical handoff entrypoint for new ChatGPT/Codex sessions.** Read this file and all linked documents in order **before inspecting, changing or executing anything**.
 
-> **Status at last operator report (2026-10-30 CDT / 2026-10-31 UTC):** Three explicitly approved, isolated **Bot0-only** live diagnostics have been run. The third produced `PERSONSUMMARY_DIAGNOSTIC result=OBSERVED http=unverified fields=list_other can_authorize_removal=false`. Its runner reported successful restoration of Bot0's **original immutable Release 160 image**, removal of the private maintenance hold, and continued cleanup pause. **The owner subsequently confirmed Bot0 was functional for players.** **V4 exact HTTP-status diagnostic is fully prepared and mock-tested offline** (source/JAR, immutable image, and Bot0 rollback runner all passed). **No fourth live test has been approved or run.**
+> **Status at last operator report (2026-10-30 CDT / 2026-10-31 UTC):** Three explicitly approved, isolated **Bot0-only** live diagnostics have been run. The third produced `PERSONSUMMARY_DIAGNOSTIC result=OBSERVED http=unverified fields=list_other can_authorize_removal=false`. Its runner reported successful restoration of Bot0's **original immutable Release 160 image**, removal of the private maintenance hold, and continued cleanup pause. **The owner subsequently confirmed Bot0 was functional for players.** **V4 exact HTTP-status diagnostic is fully prepared and mock-tested offline** (source/JAR, immutable image, and Bot0 rollback runner all passed). **The owner has now explicitly approved exactly one fourth V4 Bot0-only trial. No fourth trial output has been received or independently verified yet.**
 
 ## Read in this order
 
@@ -25,7 +25,7 @@ Diagnose the Release 160 Xbox friendship relationship semantics and **prove, wit
 - The original immutable Bot0 Release 160 rollback image is `ghcr.io/jaxdoesit/mcgateway-broadcast@sha256:1b6e1dad197b82a97546bf352cadb5426eb7537fee9a24eb9160e8b00f5a3e55`. Stable/test tags are **not** rollback identities.
 - The other 15 bots and existing production Control Bot must not be modified, restarted, or interrupted by diagnostic work.
 - Do not trigger friend removals, unpause cleanup, mutate Xbox relationships, change Compose originals, rotate credentials, or promote experimental test images.
-- **Every separate Bot0 live interruption requires explicit owner authorization for its exact scope**, even after an offline artifact is ready. No standing authorization for a fourth trial exists.
+- **Every separate Bot0 live interruption requires explicit owner authorization for its exact scope**, even after an offline artifact is ready. One fourth V4 Bot0-only diagnostic has now been explicitly approved; it is not a standing authorization for retries or further trials.
 
 ## Git branch topology
 
@@ -40,7 +40,7 @@ Diagnose the Release 160 Xbox friendship relationship semantics and **prove, wit
 
 ## Default continuation behavior
 
-**If user says "proceed":** read the linked documents, verify Git refs/CI and proceed with safe **offline-only** review, research or documentation. **V4 source, image and rollback runner are already completely mock-proven.** The next actual gate is a separately **owner-approved fourth temporary Bot0-only test**. Do not present or run a live command just because the user said "proceed"; ask for explicit scope-specific approval. Prefer proof over repetition, and label findings as confirmed, inferred, or unresolved.
+**If user says "proceed":** read the linked documents, verify Git refs/CI and proceed with safe **offline-only** review, research or documentation. **V4 source, image and rollback runner are already completely mock-proven.** The owner has **explicitly approved one fourth temporary Bot0-only V4 test**. Use only the exact verified execution command described in STATUS_AND_EVIDENCE; do not treat "proceed" as approving any repeat, deployment promotion or cleanup change. Prefer proof over repetition, and label findings as confirmed, inferred, or unresolved.
 
 **If user pastes Dell command output:** interpret exactly; distinguish Docker recovery from independent real-world Xbox/Hub functionality; update evidence and the next gate; never claim an Xbox HTTP status that the sanitized output does not provide.
 
