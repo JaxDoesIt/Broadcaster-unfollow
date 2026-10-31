@@ -26,6 +26,8 @@ These links require authorized access to the private repository. They are **hist
 
 A docs-only private bridge has also been created at [RELEASE160_PERSONSUMMARY_V4_GIT_POINTER_2026-10-30.md](https://github.com/JaxDoesIt/MCGateway/blob/docs/release160-personsummary-bridge-2026-10-30/docs/handoffs/RELEASE160_PERSONSUMMARY_V4_GIT_POINTER_2026-10-30.md), original bridge commit `425c617594baf537b49d0d5f1971809062986039`; the pointer has since been updated with the fourth-trial outcome. It points back to the canonical public runbook and separates private Control Bot/count/cleanup acceptance gates. No Control Bot source, service or production state was changed.
 
+**Updated priority:** Reuse existing MCGateway Control Bot count/cleanup machinery, preserving queue, assignments, history and safety fences. Port only Release160 command/receipt/API adapters. See [REUSE_FIRST_REPAIR_STRATEGY.md](./REUSE_FIRST_REPAIR_STRATEGY.md). The confirmed PeopleHub GET HTTP400 says nothing definitive about the distinct social friend-removal DELETE.
+
 ## Three separate gates, NEVER conflate
 
 1. **Friend-list/PersonSummary contract discovery (this handoff).** Read-only Xbox GET(s), coarse status/shape evidence, diagnostic only. Current last live result: fourth Bot0-only V4 test conclusively observed **friend-list HTTP 400** with `fields=list_http_400`. Its original image was restored, hold cleared and owner confirmed live player functionality afterward. **V4 was trialed temporarily and rolled back; it was not permanently installed or promoted.** Specific reason for HTTP 400 remains unknown; no fifth trial is authorized. Offline source review also identified differing original versus probe headers and HTTP client policies.
