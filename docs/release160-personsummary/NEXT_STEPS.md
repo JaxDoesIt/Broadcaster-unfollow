@@ -2,6 +2,15 @@
 
 Read [START_HERE](./START_HERE.md), [RULEBOOK](./RULEBOOK.md) and [STATUS_AND_EVIDENCE](./STATUS_AND_EVIDENCE.md) first.
 
+## Cross-repository implementation handoff (October 31, newer than V4-only tasks)
+
+The private MCGateway source-only fastpath advanced beyond the V4 endpoint investigation:
+- Old Release154 vs. Release160 count/cleanup contract matrix completed under `docs/operations/RELEASE160_FRIEND_CONTRACT_MATRIX_2026-10-31.md`.
+- Standalone **non-authoritative** Release160 `accounts list` primary-session parser plus four locally green fake-log test groups are committed on private branch `fix/release160-count-display-adapter-2026-10-31`. Exact hashes and safety gates live in its `docs/operations/RELEASE160_ACCOUNTS_LIST_DISPLAY_ADAPTER_2026-10-31.md`. No production wiring; GitHub Actions result still unknown.
+- Additional source-only PeopleHub HTTP 400/page-window fail-closed proof exists on public branch `fix/release160-friendcount-pagination-proof-2026-10-31`. GitHub Actions result unknown. Do not deploy.
+- **Highest-priority next check:** obtain fresh GitHub Actions run ID/status/logs for those exact workflows, fix any red CI, and independently validate only sanitized genuine `accounts list` output shape before wiring display-only on an isolated branch. Source-only tests do not establish true Xbox count, so do not update confirmed capacity or cleanup.
+- This is a *count repair* continuation, not permission to repeat the V4 PeopleHub test or bypass any original Bot0 rollback/cleanup gate.
+
 ## Immediate objective
 
 Fourth owner-approved V4 test returned **friend-list HTTP 400 Bad Request** on the exact original PeopleHub friends endpoint. The runner verified original Bot0 restoration and hold clearance; the owner separately confirmed real player functionality. The *HTTP status* is known; the *reason* is unknown. No fifth live trial is approved. Continue only offline analysis of the exact request and service contract.
