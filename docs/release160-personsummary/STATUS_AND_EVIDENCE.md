@@ -1,19 +1,45 @@
 # Release 160 PersonSummary | STATUS AND EVIDENCE
 
-**Authoritative facts as of the owner report following the third live trial, 2026-10-30 CDT / 2026-10-31 UTC.** This is a versioned evidence ledger, not a live status panel. Consult [START_HERE](./START_HERE.md), [RULEBOOK](./RULEBOOK.md), and [NEXT_STEPS](./NEXT_STEPS.md).
+**Authoritative facts through the owner's fourth live-trial and independent Bot0 functionality report, 2026-10-31 CDT.** This is a versioned evidence ledger, not a live status panel. Consult [START_HERE](./START_HERE.md), [RULEBOOK](./RULEBOOK.md), and [NEXT_STEPS](./NEXT_STEPS.md).
+
+## LATEST: Fourth V4 Bot0-only live trial, October 31 2026 CDT, completed, HTTP 400, safe rollback
+
+**Authoritative fourth-trial owner-supplied, sanitized observation:**
+
+```text
+owner_bot0_friendlist_http_code_v4_trial.py: OK
+personsummary_console_result.py: OK
+V4 scripts verified. Starting authorized Bot0-only trial.
+PREFLIGHT PASSED: cleanup paused, updater paused, 16/16 running, original image verified.
+CANDIDATE STAGED: exact digest verified; no containers changed.
+BOT0 HOLD ACTIVE: moving only Bot0 to candidate.
+BOT0 CANDIDATE RECREATED: checking stable boot before explicit GET-only V4 exact-status diagnostic.
+OBSERVATION VERIFIED: issuing exactly one V4 read-only probe command.
+PERSONSUMMARY_DIAGNOSTIC result=OBSERVED http=unverified fields=list_http_400 can_authorize_removal=false
+RESTORING BOT0 original immutable digest.
+RECOVERY VERIFIED: Bot0 original image running; maintenance hold cleared.
+```
+
+- The owner additionally stated **"Working after too verified"**, independently confirming Bot0 works for players after the fourth rollback. This closes the operator-level functional recovery gate for this one trial.
+- The single probe's **Xbox friend-list** endpoint `https://peoplehub.xboxlive.com/users/me/people/friends` returned **HTTP 400 (Bad Request)** at the expected URI. V4's `http=unverified` field represents the **unattempted/unverified PersonSummary GET**, not the friend-list HTTP response. A valid friend target was not selected; no PersonSummary response or relationship schema was obtained.
+- **Unknown reason:** 400 alone does not prove which portion of the request was rejected, whether the PeopleHub endpoint/contract is still supported, or whether the caller's Xbox token/claims or headers differ from what that service expects. Do not claim `404`, empty friends, an account ban, or deprecated endpoint.
+- From owner-run preflight/recovery: original immutable Release160 Bot0 image `sha256:1b6e1dad197b82a97546bf352cadb5426eb7537fee9a24eb9160e8b00f5a3e55` restored; maintenance hold removed; other-bot identity guard passed, cleanup pause persisted at recovery. Watchtower and updater were paused/stopped at preflight; this is NOT proof they remain so at an arbitrary later time.
+- The V4 candidate `ghcr.io/jaxdoesit/mcgateway-broadcast@sha256:4b39be565e373b5f6118716a85ec7bea8e4fab4f3bb967adba66e7b204f195ed` was used for the trial and **rolled back**. No fourth retry or subsequent live test was authorized or performed. **Fourth-trial authorization is consumed.**
+- The user supplied no sensitive Xbox header, body, XUID, or other raw account record. The sanitized output alone is sufficient for HTTP 400 and recovery classification.
+- **Next work:** offline differential audit of pinned upstream GET vs V4 HTTP request and documented Xbox API; determine whether differences in `Accept-Language`, `Accept`, `Cache-Control`, contract version or URL could explain 400. Keep hypotheses distinct. A fifth live trial requires a separate reviewed change, offline CI, rollback proof and new owner authorization.
 
 ## Current confirmed / last-reported production state
 
 | Subject | Last evidence | Confidence and limit |
 |---|---|---|
-| Bot0 | Third trial ended in `RECOVERY VERIFIED: Bot0 original image running; maintenance hold cleared.` Owner then explicitly confirmed Bot0 **functional** for players. | **Confirmed at last report**, not a new active monitoring check. |
+| Bot0 | Fourth trial ended in `RECOVERY VERIFIED: Bot0 original image running; maintenance hold cleared.` Owner then explicitly confirmed Bot0 **functional** for players. | **Confirmed at last report**, not a new active monitoring check. |
 | Other 15 bots | Preflight `16/16 running`; V3 runner checks no other bot identity drift and restores Bot0. | Runner-reported isolation; independently recheck before new live intervention. |
 | Friend cleanup | `cleanup paused` at third trial preflight; recovery guard checks paused. | Last observed **paused**; never unpause in this project. |
 | Updater | Paused and rollout complete at third trial preflight. | Last observed only. |
 | Watchtower | Required stopped by preflight. | Last observed only. |
 | Maintenance hold | `maintenance hold cleared` after successful image rollback. | Last reported. |
 | Hub real-world function | Owner answered **Bot0 good** after third rollback. | Independently owner-confirmed for Bot0; not a comprehensive end-to-end proof for all 16 at this moment. |
-| PersonSummary GET | **No confirmed request or schema result** in any of 3 live trials. | Current unresolved blocker. |
+| PersonSummary GET | **No confirmed request or schema result** in any of 4 live trials. | Current unresolved blocker. |
 | Friend deletion | No deletion was authorized by any trial, and diagnostic prints `can_authorize_removal=false`. | Do not resume deletion just from evidence here. |
 
 ## Three live trial ledger
@@ -116,11 +142,11 @@ The full chronological working notes exist in [the historical checkpoint](../rel
 - **Pinned runner source commit:** `614f7611f945dc75b579eea128cdcbbc403f35bf`; runner `tools/release160/owner_bot0_friendlist_http_code_v4_trial.py`, SHA-256 `e99f50ca8d3f0746bb8d80e4895b18c6fe6b310b64195a0760bed23b22d561f3`. Sanitizer `tools/release160/personsummary_console_result.py`, SHA-256 `e93c38493183a0ff9acdbe95a4e979fc7bb781920c984fa17238dfe397c1dbb3`. Both checksums were independently confirmed from the successful operator CI log.
 - **Candidate image immutable digest:** `ghcr.io/jaxdoesit/mcgateway-broadcast@sha256:4b39be565e373b5f6118716a85ec7bea8e4fab4f3bb967adba66e7b204f195ed`. **Rollback image immutable digest:** `ghcr.io/jaxdoesit/mcgateway-broadcast@sha256:1b6e1dad197b82a97546bf352cadb5426eb7537fee9a24eb9160e8b00f5a3e55`.
 - Reviewed source calls the candidate only after new live preflight passes: cleanup paused, updater paused, 16/16 fleet, exact original image, Watchtower stopped, Compose and other-bot identity preserved. After staging it takes its private hold, recreates only Bot0, observes 14 seconds, performs one nonce-correlated diagnostic, restores exact original image inside `finally`, and removes its hold only after verified restoration. On `RECOVERY NOT VERIFIED`, owner must **not rerun or clear hold manually**.
-- **No fourth trial output has been received; this is approval and preparation only, not a claim of execution or recovery.** After the owner runs the command, store ONLY the sanitized `PERSONSUMMARY_DIAGNOSTIC` and `RECOVERY` lines, and obtain an independent player-connectivity confirmation. Approval is spent after the one attempt even on a preflight stop.
+- **Historical pre-execution checkpoint (superseded by latest trial result above).** Fourth trial has since executed with HTTP 400 and verified rollback; no further permission remains. After the owner runs the command, store ONLY the sanitized `PERSONSUMMARY_DIAGNOSTIC` and `RECOVERY` lines, and obtain an independent player-connectivity confirmation. Approval is spent after the one attempt even on a preflight stop.
 
 ## Unresolved questions and approved work boundary
 
 > [!WARNING]
-> Actual friend-list HTTP response code and its reason remain unverified. No fourth live test is approved. Next action is offline research and an exact-code/status-bucket enhancement with fake HTTP unit tests.
+> Fourth trial definitively established **friend-list HTTP 400**, but the detailed reason remains unknown. The tested V4 image was restored to original and owner confirmed Bot0 works. No fifth live trial is approved. Next action is offline upstream request-parity and Microsoft API contract research.
 
 See [NEXT_STEPS](./NEXT_STEPS.md) for prioritized, executable work. Production safety remains the overriding requirement.
