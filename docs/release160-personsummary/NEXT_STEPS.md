@@ -1,5 +1,13 @@
 # Release 160 PersonSummary | NEXT STEPS AND TASK PATHWAY
 
+## Latest exact CI continuation, October 31
+
+- [x] Public producer CI run [41246603544](https://github.com/JaxDoesIt/Broadcaster-unfollow/actions/runs/41246603544), source SHA `562228cb42cd72e754d94791cbf8f7b375319a0c`: original Release160 variant proof PASS, core Java compile PASS, new mocked strict social-summary parser **146/146 PASS**. Existing Gradle config proof FAIL only because its fixture Java class was not copied, so standalone compilation was not reached. Not a demonstrated actual Xbox failure.
+- [x] Corrected isolated public **workflow-only** commit `ad0f0fe3a652940c8197618c5ee313bed631a3d9` adds copy of original `ConfigCompatibilityProof.java` into the config proof source directory; production-pinned overlay, Java producer and deletion hold unchanged.
+- [ ] **NEXT:** exact new Actions status/job/log for `.github/workflows/release160-accounts-list-producer-proof-ci.yml` on `fix/release160-accounts-list-producer-unavailable-2026-10-31`, commit `ad0f0fe3a652940c8197618c5ee313bed631a3d9`. Do not consider full compile/CI green without verified conclusion.
+- [ ] If green, source-only privacy/safety review and rollback plan before independently owner-authorized Bot0-only trial; never activate cleanup or treat provisional count as authoritative from this source patch.
+
+
 ## Latest October 31 repair and next exact CI gate
 
 - [x] Two owner **read-only** log inspections now showed repeated `accounts list` and Loading on Bot0/1/2, but no recognized result/errors. Second scan read **both stdout and stderr**, classified labels only, no private identifiers and no new Xbox command or GET.
