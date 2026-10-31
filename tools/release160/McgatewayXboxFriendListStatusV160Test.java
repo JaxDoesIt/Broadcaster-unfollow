@@ -73,8 +73,19 @@ public final class McgatewayXboxFriendListStatusV160Test {
         reason("list_limited", 429, "{}");
         reason("list_server", 500, "{}");
         reason("list_server", 503, "{}");
-        reason("list_other", 404, "{}");
-        reason("list_other", 302, "{}");
+        // V4 exact status evidence: an HTTP code is safe, but never the
+        // reply's body, headers, account identifiers or authentication.
+        for (int code : new int[] {
+            100, 199, 201, 202, 204, 206, 301, 302, 303, 304, 307, 308,
+            400, 402, 404, 405, 406, 409, 410, 418, 422, 451, 499
+        }) {
+            reason("list_http_" + code, code, "{\"private\":\"" + SECRET + "\"}");
+        }
+        for (int status : new int[] {-1, 0, 99, 600, 999}) {
+            reason("list_other", status, "{}");
+        }
+        // Successful HTTP status still requires a valid complete JSON list.
+        reason("list_invalid", 200, "{\"unrelated\":\"unknown\"}");
 
         reason("list_invalid", 200, "");
         reason("list_invalid", 200, "{");
