@@ -53,6 +53,10 @@ METHODS = {
         "        if (mcgPersonSummaryReadonlyCandidate()) return;",
     "    private void initAutoFriend(CoreConfig.FriendSyncConfig friendSyncConfig) {":
         "        if (mcgPersonSummaryReadonlyCandidate()) return;",
+    "    private void sendInviteOnce(String xuid) {":
+        "        if (mcgPersonSummaryReadonlyCandidate()) return;",
+    "    public void sendInvite(String xuid) {":
+        "        if (mcgPersonSummaryReadonlyCandidate()) return;",
 }
 METHOD = """    // MCGATEWAY_PERSONSUMMARY_READONLY_CACHE_V2
     // This image is for one controlled operator diagnostic, not normal service.
