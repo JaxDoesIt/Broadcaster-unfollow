@@ -1,8 +1,8 @@
 # Release 160: Xbox friend-list / PersonSummary diagnostic | START HERE
 
-**Canonical handoff entrypoint for new ChatGPT/Codex sessions.** Read this file and the three linked documents in order **before inspecting, changing or executing anything**.
+**Canonical handoff entrypoint for new ChatGPT/Codex sessions.** Read this file and all linked documents in order **before inspecting, changing or executing anything**.
 
-> **Status at last operator report (2026-10-30 CDT / 2026-10-31 UTC):** Three explicitly approved, isolated **Bot0-only** live diagnostics have been run. The third produced `PERSONSUMMARY_DIAGNOSTIC result=OBSERVED http=unverified fields=list_other can_authorize_removal=false`. Its runner reported successful restoration of Bot0's **original immutable Release 160 image**, removal of the private maintenance hold, and continued cleanup pause. **The owner subsequently confirmed Bot0 was functional for players.** No fourth live test has been approved or run.
+> **Status at last operator report (2026-10-30 CDT / 2026-10-31 UTC):** Three explicitly approved, isolated **Bot0-only** live diagnostics have been run. The third produced `PERSONSUMMARY_DIAGNOSTIC result=OBSERVED http=unverified fields=list_other can_authorize_removal=false`. Its runner reported successful restoration of Bot0's **original immutable Release 160 image**, removal of the private maintenance hold, and continued cleanup pause. **The owner subsequently confirmed Bot0 was functional for players.** **V4 exact HTTP-status diagnostic is fully prepared and mock-tested offline** (source/JAR, immutable image, and Bot0 rollback runner all passed). **No fourth live test has been approved or run.**
 
 ## Read in this order
 
@@ -11,7 +11,7 @@
 3. **[NEXT_STEPS.md](./NEXT_STEPS.md)**: active research pathway and prioritized, testable next tasks. Continue from the **first unchecked gate**; do not skip directly to another live restart.
 4. **[ENDPOINT_RESEARCH.md](./ENDPOINT_RESEARCH.md)**: official Microsoft people/summary REST docs compared against pinned upstream endpoints and unresolved compatibility questions.
 5. **[HANDOFF_TO_NEW_CHAT.md](./HANDOFF_TO_NEW_CHAT.md)**: copyable handoff text and how another assistant should recover context directly from this Git branch.
-5. **[Historical chronological checkpoint](../release160-personsummary-canary-image-checkpoint-2026-10-30.md)**: older cumulative findings and experimental states. **Some sections are historical** (e.g., "not deployed" or "awaiting approval" before completed trials). When in conflict, this START_HERE and the current STATUS_AND_EVIDENCE take precedence.
+6. **[Historical chronological checkpoint](../release160-personsummary-canary-image-checkpoint-2026-10-30.md)**: older cumulative findings and experimental states. **Some sections are historical** (e.g., "not deployed" or "awaiting approval" before completed trials). When in conflict, this START_HERE and the current STATUS_AND_EVIDENCE take precedence.
 
 ## Goal
 
@@ -34,11 +34,12 @@ Diagnose the Release 160 Xbox friendship relationship semantics and **prove, wit
 | Cumulative historical checkpoint | `build/release160-readonly-friendcache-canary-2026-10-30` | [Prior detailed checkpoint](../release160-personsummary-canary-image-checkpoint-2026-10-30.md); may contain old stage statements. |
 | Last proven V3 Java source | `fix/release160-friendlist-status-diagnostic-2026-10-30`, commit `04d7ae5906a50bcd8923813f76dcc4521ffea72a` | Exact bounded list GET/status helper, one-shot PersonSummary helper, existing friend-mutation denials; source-only proof CI. |
 | Last proven V3 image and Dell runner | `build/release160-friendlist-status-v3-2026-10-30`, runner commit `0af042dcedc85a92e21fd9181e0c0a400923e7a6` | Exact-image V3 canary and mock-tested Bot0 rollback script. **Do not rerun unchanged.** |
-| Next diagnostic development | **New isolated `fix/` branch**, from the proven V3 source, after reading NEXT_STEPS | Exact HTTP category or endpoint analysis must be independently mock-tested. Do not edit stable/default branch or V3 frozen proof commits. |
+| Current V4 exact-status source proof | `fix/release160-friendlist-http-code-v4-2026-10-30`, commit `66cfa52ecfa51714220a8ef6c051e44018745ebb` | 5,535 mocked Java assertions, full pinned JAR build and sanitizer proof. |
+| Current V4 immutable image and mocked runner | `build/release160-friendlist-http-code-v4-2026-10-30`, operator commit `614f7611f945dc75b579eea128cdcbbc403f35bf` | Verified image digest `sha256:4b39be565e373b5f6118716a85ec7bea8e4fab4f3bb967adba66e7b204f195ed`; 25 mocked operator tests. **NOT DEPLOYED.** |
 
 ## Default continuation behavior
 
-**If user says "proceed":** read all four documents, verify latest relevant Git refs and CI, continue **offline research/patch/mock tests/documentation**, and update the living pathway. Do not presume another live Bot0 trial is approved. Prefer proof over repetition, and label findings as confirmed, inferred, or unresolved.
+**If user says "proceed":** read the linked documents, verify Git refs/CI and proceed with safe **offline-only** review, research or documentation. **V4 source, image and rollback runner are already completely mock-proven.** The next actual gate is a separately **owner-approved fourth temporary Bot0-only test**. Do not present or run a live command just because the user said "proceed"; ask for explicit scope-specific approval. Prefer proof over repetition, and label findings as confirmed, inferred, or unresolved.
 
 **If user pastes Dell command output:** interpret exactly; distinguish Docker recovery from independent real-world Xbox/Hub functionality; update evidence and the next gate; never claim an Xbox HTTP status that the sanitized output does not provide.
 
