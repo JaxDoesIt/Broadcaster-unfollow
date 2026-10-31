@@ -70,6 +70,16 @@ Date: 2026-10-30 CDT / 2026-10-31 UTC
 - `components/control-bot/lib/update-manager.js` has a separate persisted updater paused field, and its own potential Compose paths. Its `/update status` is a useful live source; external updater/watchtower state still needs independent verification.
 - **NEXT BLOCKER:** active Control Bot's installed source and actual runtime pause states have not yet been verified. No hold marker write, Bot0 replacement, restart, Xbox request or cleanup command authorized by this source review.
 
+## Installed Control Bot safety verification (OPERATOR READ-ONLY; PASSED)
+- Live Control Bot main PID resolved; the active `index.js` entrypoint was identified.
+- Local Git blob comparisons match reviewed code exactly: `index.js` `aef6d58fc48d40892ed9a565396f9ece13a2a385`, `release160-bot0-restart-hold.js` `bff9d6dc80bcf8fc0cc3bb9466b832de73ee711d`, and `release160-cleanup-gate.js` `fcf0c8c8491e112295e6297786e80581185c7b0d`.
+- Both Bot0 restart hold and cleanup gate are wired into installed Control Bot.
+- **Bot0 maintenance marker ABSENT:** the optional Bot0 restart/console hold is not currently active; no marker was created or modified by this check.
+- Updater's local JSON state is readable and `paused=True`; `migrationPaused=False` (distinct flag, not the updater-wide pause).
+- Stored staged rollout reports `stage=complete`. This does not, by itself, prove all live workers quiescent or cleanup paused.
+- **OUTSTANDING:** operator's live `/cleanup status` (paused flag, batch active, Bot0 active cleanup rows, open dispatch intents, console leases, count capture, restart reservation). No DB, production services, Docker images, or Xbox requests touched.
+- Future authorized trial must activate verified hold *before* Bot0 service recreation and use an independently reviewed console route, because the hold blocks Control Bot PTY dispatch. Do not activate hold merely to prove it works until the end-to-end invocation/rollback protocol is ready.
+
 ## Safety and next gate
 - No Dell access, no Bot0 restart, no fleet restart, no Xbox API request, no database access, no friend cleanup, no GHCR test/stable promotion occurred.
 - Source probes never authorize deletion. Friend removal remains intentionally denied. Cleanup remains paused.
