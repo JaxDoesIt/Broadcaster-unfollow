@@ -1,0 +1,6 @@
+# Build-only V4 exact HTTP status diagnostic. Never run as production image.
+# Exact original Release160 image digest is supplied and verified by CI.
+# The sole copied file is the independently source-proven standalone JAR.
+ARG MCGATEWAY_BASE_IMAGE
+FROM ${MCGATEWAY_BASE_IMAGE}
+COPY --chown=app:app bootstrap/standalone/build/libs/MCXboxBroadcastStandalone.jar /opt/app/MCXboxBroadcastStandalone.jar
