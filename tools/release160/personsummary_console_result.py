@@ -15,13 +15,17 @@ _FIELDS = frozenset({
     "list_auth", "list_limited", "list_server", "list_other",
     "list_empty", "list_no_valid_target", "list_invalid",
     "list_incomplete", "list_unverified"
-})
+}) | frozenset(
+    f"list_http_{code}" for code in range(100, 500)
+    if code not in (200, 401, 403, 429)
+)
+# Finite, bounded protocol-code allowlist: never admit arbitrary response text.
 _ANSI = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
 _PROOF = re.compile(
     r"(?<![A-Za-z0-9_])MCGATEWAY_PERSONSUMMARY_SCHEMA_V160 "
     r"nonce=(?P<nonce>[0-9a-f]{32}) "
     r"http=(?P<http>[a-z0-9]+) "
-    r"fields=(?P<fields>[a-z_]+) "
+    r"fields=(?P<fields>[a-z0-9_]+) "
     r"can_authorize_removal=false(?![A-Za-z0-9_])"
 )
 
