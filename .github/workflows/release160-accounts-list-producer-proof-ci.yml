@@ -54,8 +54,11 @@ jobs:
           test "$(python3 -B overlay/tools/release160/apply_accounts_list_producer_v160.py upstream \
             overlay/tools/release160/McgatewaySocialCountV160.java)" = "UNCHANGED"
           mkdir -p upstream/core/src/mcgatewayProof/java/com/rtm516/mcxboxbroadcast/core
+          mkdir -p upstream/core/src/mcgatewayProof/java/com/rtm516/mcxboxbroadcast/core/configs
           cp overlay/tools/release160/McgatewaySocialCountV160Test.java \
             upstream/core/src/mcgatewayProof/java/com/rtm516/mcxboxbroadcast/core/
+          cp overlay/tools/release160/ConfigCompatibilityProof.java \
+            upstream/core/src/mcgatewayProof/java/com/rtm516/mcxboxbroadcast/core/configs/
           cat overlay/tools/release160/config-proof.gradle.kts >> upstream/core/build.gradle.kts
           cat >> upstream/core/build.gradle.kts <<'EOF'
           tasks.register<JavaExec>("mcgatewaySocialCountV160Proof") {
