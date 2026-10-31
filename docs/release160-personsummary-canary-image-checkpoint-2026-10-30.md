@@ -60,6 +60,16 @@ Date: 2026-10-30 CDT / 2026-10-31 UTC
 
 **Unverified before execution:** Control Bot maintenance/health supervision behavior for a planned Bot0 recreation; exact Xbox command delivery path; current cleanup paused state; successful rollback rehearsal. Source CI and Docker registry checks do not prove these live details. Therefore, production authorization is **NOT YET REQUESTED** until these are addressed in an executable gated procedure.
 
+## Control Bot supervision source review (GIT ONLY, not proof of installed binary)
+- Reviewed branch in `JaxDoesIt/MCGateway`: `fix/release160-presence-continuation-2026-10-29`.
+- `components/control-bot/index.js` Git blob `aef6d58fc48d40892ed9a565396f9ece13a2a385`: Bot0 maintenance hold path is `<active index.js directory>/data/.release160-bot0-maintenance-hold`, and restart reservation/automatic/manual/restart-all/AI paths call `release160Bot0Held`.
+- `components/control-bot/lib/release160-bot0-restart-hold.js` Git blob `bff9d6dc80bcf8fc0cc3bb9466b832de73ee711d`: owner-managed exact private-file sentinel `RELEASE160_BOT0_RESTART_HOLD_V1\n` blocks Bot0 and not other 15. Absent marker does not activate hold. Malformed present marker is held closed. Marker is NOT created/deleted by source.
+- `components/control-bot/lib/release160-cleanup-gate.js` Git blob `fcf0c8c8491e112295e6297786e80581185c7b0d`: final cleanup admission guard for Release160 release/update state.
+- **Critical console conflict:** hold blocks Control Bot's PTY console/friend-count dispatch to Bot0. A live `personsummaryprobe` invocation cannot use that same Control Bot route while held. Do not clear the hold merely to dispatch the diagnostic. Use a separately reviewed owner-controlled direct console route, and verify its safety beforehand.
+- `components/control-bot/lib/v44-core.js` reads persisted `cleanup_paused` from its SQLite state; an environment setting or old log is not live proof. The supported read-only user-facing check is Discord `/cleanup status`, including paused, active tasks, dispatch-intents and in-flight lease fields. Do not open, back up, or mutate the database in this preflight.
+- `components/control-bot/lib/update-manager.js` has a separate persisted updater paused field, and its own potential Compose paths. Its `/update status` is a useful live source; external updater/watchtower state still needs independent verification.
+- **NEXT BLOCKER:** active Control Bot's installed source and actual runtime pause states have not yet been verified. No hold marker write, Bot0 replacement, restart, Xbox request or cleanup command authorized by this source review.
+
 ## Safety and next gate
 - No Dell access, no Bot0 restart, no fleet restart, no Xbox API request, no database access, no friend cleanup, no GHCR test/stable promotion occurred.
 - Source probes never authorize deletion. Friend removal remains intentionally denied. Cleanup remains paused.
