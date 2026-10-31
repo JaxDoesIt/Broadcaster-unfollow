@@ -35,6 +35,15 @@ Date: 2026-10-30 CDT / 2026-10-31 UTC
 - Read-only observation; no proof that Compose files/env are intact, no reconstruction test, and no proof Control Bot will ignore a planned Bot0-only deployment.
 - Before deployment: validate the Compose project/service source-file presence, effective service identity, and isolation of a Bot0-only change, without logging environment values or mount sources; then obtain a separate explicit live-test approval.
 
+## Operator Compose reconstruction preflight (VALIDATED; no changes)
+- `com.docker.compose.project` and `com.docker.compose.service` present; Bot0 service is `mcgatewaybot-docker`.
+- Compose project directory and one declared Compose file exist. `docker compose config --format json` validated and returned the expected service.
+- Effective service has container name `mcgatewaybot-docker`, restart policy `unless-stopped`, one config bind mount, one network, zero `depends_on`, one environment entry, and no entrypoint/command override.
+- Effective service `user` is DEFAULT, while existing runtime image user was previously shown as `app:app`: not a contradiction, since the image supplies the user when Compose omits it.
+- **Risk requiring special handling:** Compose image reference is TAG_OR_VARIABLE, not a digest pin. Do not rely on resolving that tag for rollback; use exact original registry digest `sha256:1b6e1dad197b82a97546bf352cadb5426eb7537fee9a24eb9160e8b00f5a3e55`, and candidate digest `sha256:6877f7e59118a5d48ab866f8db66bbfd156f6e336252842297f80a31665f74e1` only.
+- This was read-only; no live service was stopped/recreated, no Docker image pulled, no cleanup or Xbox requests.
+- Remaining for a future separately authorized live step: inspect whether currently resolved Compose tag maps to installed image locally, validate a Bot0-only temporary image override while preserving original Compose files, ensure Control Bot and other supervisors will not interfere, and have a bounded rollback procedure. No fleet rollout implied.
+
 ## Safety and next gate
 - No Dell access, no Bot0 restart, no fleet restart, no Xbox API request, no database access, no friend cleanup, no GHCR test/stable promotion occurred.
 - Source probes never authorize deletion. Friend removal remains intentionally denied. Cleanup remains paused.
