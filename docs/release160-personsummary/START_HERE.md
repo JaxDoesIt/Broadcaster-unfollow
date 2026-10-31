@@ -1,5 +1,12 @@
 # Release 160: Xbox friend-list / PersonSummary diagnostic | START HERE
 
+## Latest October 31 producer build failure and workflow correction
+
+The producer source-only Actions run `41246603544` at `562228cb42cd72e754d94791cbf8f7b375319a0c` **failed**, but its pinned original-overlay preflight passed; patched Java `:core:compileJava` passed; the new fake social summary test reported **146 checks passed**. Failure occurred in the *preexisting config compatibility task* `:core:mcgatewayConfigCompatibility` with `ClassNotFoundException: ...ConfigCompatibilityProof`: the CI workflow forgot to copy that original proof file. The task stopped before standalone compilation could be verified.
+
+Corrected **workflow only**, no producer source changes, commit `ad0f0fe3a652940c8197618c5ee313bed631a3d9` on public `fix/release160-accounts-list-producer-unavailable-2026-10-31`. It now copies `overlay/tools/release160/ConfigCompatibilityProof.java` to `upstream/core/src/mcgatewayProof/java/com/rtm516/mcxboxbroadcast/core/configs/` before Gradle. **Fresh CI conclusion still unknown.** Next: verify new push-triggered workflow run for exact fixed commit, fetch job/errors if red, no image/production changes or Xbox calls.
+
+
 ## Latest October 31 producer repair branch, not deployed
 
 The owner supplied a second **read-only stdout+stderr** Docker log audit of three production bots: Bot0/1/2 had respectively **4/12/12** `accounts list` commands and same count `Loading status of sessions...` frames, with **no recognized primary-session, friend-count, completed result, or known error frames**. This narrows the observed break to async producer response generation or logging, not Control Bot command delivery; exact Xbox failure remains unknown.
