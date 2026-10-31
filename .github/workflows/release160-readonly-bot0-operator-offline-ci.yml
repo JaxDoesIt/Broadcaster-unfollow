@@ -1,0 +1,57 @@
+name: Release160 read-only Bot0 canary runner (mock-only safety)
+
+on:
+  push:
+    branches:
+      - build/release160-readonly-friendcache-canary-2026-10-30
+    paths:
+      - 'tools/release160/owner_bot0_personsummary_readonly_trial.py'
+      - 'tools/release160/test_bot0_compose_recovery_labels.py'
+      - 'tools/release160/personsummary_console_result.py'
+      - 'tools/release160/test_personsummary_console_result.py'
+      - '.github/workflows/release160-readonly-bot0-operator-offline-ci.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  dry-run-tests-only:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Check syntax and run simulated unit tests only
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B -m py_compile \
+            tools/release160/owner_bot0_personsummary_readonly_trial.py \
+            tools/release160/test_bot0_compose_recovery_labels.py \
+            tools/release160/personsummary_console_result.py \
+            tools/release160/test_personsummary_console_result.py
+          python3 -B tools/release160/test_personsummary_console_result.py
+          python3 -B tools/release160/test_bot0_compose_recovery_labels.py
+          # Reuse all original full mocked lifecycle + rollback assertions,
+          # substituting only the new module and 14-second observation.
+          python3 -B - <<'PY'
+          from pathlib import Path
+          src = Path("tools/release160/test_owner_bot0_personsummary_trial.py")
+          value = src.read_text()
+          value = value.replace("import owner_bot0_personsummary_trial as t",
+                                "import owner_bot0_personsummary_readonly_trial as t")
+          value = value.replace("t.FRIEND_SYNC_WARMUP_SECONDS",
+                                "t.CANARY_OBSERVE_SECONDS")
+          value = value.replace("self.assertEqual(t.CANARY_OBSERVE_SECONDS, 120)",
+                                "self.assertEqual(t.CANARY_OBSERVE_SECONDS, 14)")
+          assert "t.FRIEND_SYNC_WARMUP_SECONDS" not in value
+          Path("tools/release160/.mock_readonly_lifecycle_generated.py").write_text(value)
+          PY
+          python3 -B tools/release160/.mock_readonly_lifecycle_generated.py
+          sha256sum tools/release160/owner_bot0_personsummary_readonly_trial.py tools/release160/personsummary_console_result.py
+          echo 'PASS: MOCK-ONLY TESTS, no production connections, Docker changes or Xbox requests.'
