@@ -43,6 +43,15 @@ jobs:
         run: |
           set -euo pipefail
           test "$(git -C upstream rev-parse HEAD)" = "$UPSTREAM_SHA"
+          # Exact historical relay-audit-expiry-held-v2 overlay inputs.
+          test "$(git -C overlay hash-object tools/apply_mcgateway_release160_patch.py)" = "f4114376354b18e3b7541aa4af8bc6103b3b3b53"
+          test "$(git -C overlay hash-object tools/test_release160_patch.py)" = "b5cfd61bd0e21434504eeb4a67f86e2a7e13a280"
+          test "$(git -C overlay hash-object tools/release160/config-proof.gradle.kts)" = "b76d20e5603ad1eb212fd913ce17e861862c3853"
+          # Exact reviewed GET-only canary helper and safety harness.
+          test "$(git -C overlay hash-object tools/release160/McgatewayXboxPersonSummaryProbeV160.java)" = "540071e207b7f57f4bdbf3dbb216e716a2111fce"
+          test "$(git -C overlay hash-object tools/release160/McgatewayXboxPersonSummaryProbeV160Test.java)" = "9ea37126bb135553fcd57d9ecffa308cc5e8bd17"
+          test "$(git -C overlay hash-object tools/release160/apply_personsummary_canary.py)" = "8492f7a81fd93bc9809b7cb618110750e20502aa"
+          test "$(git -C overlay hash-object tools/release160/test_apply_personsummary_canary.py)" = "92fba7b20fbe9bc5320c933c2923ae080f6db40e"
           # This MUST be the old relay-audit-expiry-held-v2 overlay,
           # not the experimental friend-count-v3/presence-retry candidate.
           ! grep -Fq 'MCGATEWAY_XBOX_PRESENCE_POST_ACCEPTED' overlay/tools/apply_mcgateway_release160_patch.py
