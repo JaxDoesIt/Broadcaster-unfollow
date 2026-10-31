@@ -8,7 +8,7 @@ Read [START_HERE](./START_HERE.md), [STATUS_AND_EVIDENCE](./STATUS_AND_EVIDENCE.
 
 **Technical goal:** Find a *verified* read-only Xbox response contract sufficient to choose a legitimate friend target and inspect PersonSummary relationship fields. Separate transport, HTTP, response-shape and domain semantics. A valid PersonSummary schema is only evidence for a later contract review, **not permission to remove or alter a friendship**.
 
-**Current blocker:** `list_other` from the third Bot0 trial. The V3 helper bucket includes any HTTP status other than 200, 401, 403, 429 or 500 through 599, after matching the expected final URI. The actual HTTP code and body are unobserved. The only supportable inference is "the request obtained an HTTP reply whose status fell into that category." Do **not** infer 404, endpoint retirement, a Microsoft policy change, unauthorized token, or an empty friend list.
+**Current blocker (after FOUR live trials):** the fourth V4 test definitively returned `fields=list_http_400` for the Xbox **friend-list** GET on the original `peoplehub.xboxlive.com/users/me/people/friends` URI. HTTP 400 means the service rejected the request, but neither the response body nor its precise error reason was observed. The helper returned `http=unverified` for **PersonSummary**, which was not reached. Owner independently confirmed Bot0 functional after exact-image rollback. Do not infer which header, token, user claim, endpoint or contract caused 400. **No fifth live trial approved.**
 
 Done criteria are sequential:
 1. Verified, minimally revealing list GET status and response semantics using only allowlisted diagnostic information.
@@ -43,7 +43,7 @@ Done criteria are sequential:
 - Prefer isolated mock fetchers with fake tokens and fake response objects. No real Xbox GET, live container, Docker daemon or Dell connection in CI.
 - Respect **one** bounded friend-list GET and at most **one** PersonSummary GET in a live trial. No redirects, transparent retries, hidden paging loops or fallback requests unless separately reviewed and explicitly authorized. If an endpoint is modified, treat that as a new request contract.
 - Fully bound network bytes and time, including streamed bodies, close/cancel on overflow or timeout; use exact expected HTTPS host/URI, and disallow redirect following.
-- Preserve distinction between actual Xbox HTTP status and PersonSummary status. For V3, `http=unverified` means **PersonSummary HTTP was not established** even when `fields=list_other` represents an observed friend-list HTTP response.
+- Preserve distinction between actual Xbox HTTP status and PersonSummary status. For V3/V4, `http=unverified` means **PersonSummary HTTP was not established** even when `fields=list_other` or `fields=list_http_400` reflects an observed friend-list HTTP response.
 - A response must not authorize removal without a separately established business contract, correct identity and receipt semantics, stale-data gates and owner-approved rollout. **All diagnostic outputs always end in `can_authorize_removal=false`.**
 
 ## 4. Git workflow and source-of-truth requirements
