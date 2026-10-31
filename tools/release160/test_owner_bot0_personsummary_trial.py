@@ -169,13 +169,13 @@ class MockedLifecycleTests(unittest.TestCase):
                 data = copy.deepcopy(original)
                 if override is not None:
                     data["services"][t.BOT]["image"] = (
-                        t.CANDIDATE if "canary" in str(override) else t.ORIGINAL
+                        t.CANDIDATE if "canary" in override.name else t.ORIGINAL
                     )
                 return data
 
             def recreate(_context, override):
                 state["image"] = (
-                    "candidate-id" if "canary" in str(override) else "baseline-id"
+                    "candidate-id" if "canary" in override.name else "baseline-id"
                 )
                 transitions.append(state["image"])
 
