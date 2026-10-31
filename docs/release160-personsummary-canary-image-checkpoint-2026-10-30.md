@@ -95,6 +95,22 @@ Date: 2026-10-30 CDT / 2026-10-31 UTC
 - **Not equivalent to a live transport test.** The reviewed Control Bot PTY source `components/control-bot/lib/docker-console-pty.py` Git blob is `64c2b0d1803c5e75dd80b37cca2cba99de16ecc2` and its support module `bounded_console_output.py` is `7633fe7e4a434e42cbcbefa4cc41458c18661ee5`. This owner-controlled direct transport can in principle bypass CB's held console path; do not run it before checking installed copies, Bot0 TTY and obtaining separate explicit approval.
 - The future live command requires **one** schema GET only when the console one-shot command reaches the application. Ordinary broadcaster startup/rejoin will also cause its normal network traffic: do not claim the entire Bot0 trial makes only one Xbox request. Do not disclose raw PTY console output.
 
+## Operator direct PTY console readiness (PASSED; no command sent)
+- Operator's read-only Dell results: installed `components/control-bot/lib/docker-console-pty.py` Git blob `64c2b0d1803c5e75dd80b37cca2cba99de16ecc2`: EXACT MATCH.
+- Installed `components/control-bot/lib/bounded_console_output.py` Git blob `7633fe7e4a434e42cbcbefa4cc41458c18661ee5`: EXACT MATCH.
+- Bot0 `Tty=True`, `OpenStdin=True`, `Running=True`, `RestartCount=0`.
+- Maintenance marker ABSENT as expected: protection not active yet. The direct Python PTY helper is a **future option** to submit the one-shot command while the Control Bot PTY route is intentionally blocked by the maintenance marker.
+- No console request, Docker changes, image pull, restart, friend cleanup or Xbox operation performed. PTY file/TTY matching does not establish a successful live console attach or an application response.
+
+## Explicit authorization gate
+- Candidate exact reference: `ghcr.io/jaxdoesit/mcgateway-broadcast@sha256:6877f7e59118a5d48ab866f8db66bbfd156f6e336252842297f80a31665f74e1`.
+- Original exact recovery reference: `ghcr.io/jaxdoesit/mcgateway-broadcast@sha256:1b6e1dad197b82a97546bf352cadb5426eb7537fee9a24eb9160e8b00f5a3e55`.
+- When the owner explicitly approves a bounded Bot0-only trial, first perform fresh no-write runtime and fleet health checks; verify cleanup is still paused with no open Bot0 tasks, and updater/Watchtower still held. Then activate the precisely formatted Bot0-only maintenance marker using a reviewed atomic private-file operation and verify it is effective.
+- Do not send a console command during the maintenance hold via Control Bot: this would be blocked. After a separately reviewed and authorized Bot0-only Compose deployment, the owner-controlled PTY helper can attach directly to the exact container and submit a fresh 32-character lowercase hexadecimal nonce once. Capture output privately; pass only the filtered result through the offline-tested allowlist sanitizer. Do not print raw console traffic or retry an uncertain send.
+- Restore original exact image reference via Bot0-only Compose override, verify health/fleet and monitor, then remove the marker only after safely finishing recovery. Keep original Compose file unchanged, friend cleanup paused and all 15 other bots untouched.
+- A trial causes a brief Bot0 interruption and normal broadcaster Xbox reconnect traffic. The diagnostic allows at most one additional Xbox relationship GET; there is no friend removal.
+- The operator may approve deployment and the GET together only after seeing the bounded procedure and risks. **NO LIVE ACTION HAS BEEN AUTHORIZED OR EXECUTED.**
+
 ## Safety and next gate
 - No Dell access, no Bot0 restart, no fleet restart, no Xbox API request, no database access, no friend cleanup, no GHCR test/stable promotion occurred.
 - Source probes never authorize deletion. Friend removal remains intentionally denied. Cleanup remains paused.
