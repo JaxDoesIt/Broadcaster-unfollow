@@ -6,10 +6,13 @@ Read [START_HERE](./START_HERE.md), [RULEBOOK](./RULEBOOK.md) and [STATUS_AND_EV
 
 The private MCGateway source-only fastpath advanced beyond the V4 endpoint investigation:
 - Old Release154 vs. Release160 count/cleanup contract matrix completed under `docs/operations/RELEASE160_FRIEND_CONTRACT_MATRIX_2026-10-31.md`.
-- Standalone **non-authoritative** Release160 `accounts list` primary-session parser plus four locally green fake-log test groups are committed on private branch `fix/release160-count-display-adapter-2026-10-31`. Exact hashes and safety gates live in its `docs/operations/RELEASE160_ACCOUNTS_LIST_DISPLAY_ADAPTER_2026-10-31.md`. No production wiring; GitHub Actions result still unknown.
+- Standalone **non-authoritative** Release160 `accounts list` primary-session parser plus four locally green fake-log test groups are committed on private branch `fix/release160-count-display-adapter-2026-10-31`. Exact hashes and safety gates live in its `docs/operations/RELEASE160_ACCOUNTS_LIST_DISPLAY_ADAPTER_2026-10-31.md`. No production wiring; original three CI runs were verified FAILURE because of a bad test import, fixed in commit `0bed60acad70179b0d1f53c9b001258f4b92cf43`. Corrected test bytes passed 4/4 locally; new CI still unverified.
 - Additional source-only PeopleHub HTTP 400/page-window fail-closed proof exists on public branch `fix/release160-friendcount-pagination-proof-2026-10-31`. GitHub Actions result unknown. Do not deploy.
 - **Highest-priority next check:** obtain fresh GitHub Actions run ID/status/logs for those exact workflows, fix any red CI, and independently validate only sanitized genuine `accounts list` output shape before wiring display-only on an isolated branch. Source-only tests do not establish true Xbox count, so do not update confirmed capacity or cleanup.
 - This is a *count repair* continuation, not permission to repeat the V4 PeopleHub test or bypass any original Bot0 rollback/cleanup gate.
+
+
+**October 31 CI verification:** [Broadcaster source-only run 41244399850](https://github.com/JaxDoesIt/Broadcaster-unfollow/actions/runs/41244399850) at commit `0545880830bd9ea2241a9b167d2df3b59b7d132d` completed **SUCCESS**. Connected GitHub confirmed job `124664707435`, pinned Java21 count/config fake tests and standalone compilation succeeded. No image was promoted and no Xbox GET was executed by this workflow.
 
 ## Immediate objective
 
