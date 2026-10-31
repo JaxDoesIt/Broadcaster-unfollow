@@ -113,10 +113,17 @@ public final class McgatewayXboxFriendListStatusV160 {
                     || !safeHeaders(reply.headers(), reply.body().length))
                 return fail("list_invalid");
 
-            String text = StandardCharsets.UTF_8.newDecoder()
-                .onMalformedInput(CodingErrorAction.REPORT)
-                .onUnmappableCharacter(CodingErrorAction.REPORT)
-                .decode(ByteBuffer.wrap(reply.body())).toString();
+            String text;
+            try {
+                text = StandardCharsets.UTF_8.newDecoder()
+                    .onMalformedInput(CodingErrorAction.REPORT)
+                    .onUnmappableCharacter(CodingErrorAction.REPORT)
+                    .decode(ByteBuffer.wrap(reply.body())).toString();
+            } catch (java.nio.charset.CharacterCodingException ignored) {
+                // HTTP 200 is known: bad UTF-8 is an invalid response body,
+                // not an unknown transport outcome.
+                return fail("list_invalid");
+            }
             return inspect(text, self);
         } catch (Exception ignored) {
             return fail("list_unverified");
