@@ -241,13 +241,23 @@ def recreate(context, override):
     ], timeout=180)
 
 def verified_boot(expected_id, seconds=14):
+    # Treat any container replacement or restart during observation as drift.
+    first = docker_inspect("container", BOT)
+    expected_container = first["Id"]
+    expected_start = first.get("State", {}).get("StartedAt")
+    expected_restarts = first.get("RestartCount")
+    require(expected_start and expected_restarts == 0,
+            "fresh Bot0 boot identity/restart count is unverified")
     end = time.monotonic() + seconds
     while time.monotonic() < end:
         bot = docker_inspect("container", BOT)
-        require(bot.get("Image") == expected_id and
+        require(bot.get("Id") == expected_container and
+                bot.get("RestartCount") == 0 and
+                bot.get("State", {}).get("StartedAt") == expected_start and
+                bot.get("Image") == expected_id and
                 bot.get("State", {}).get("Running") is True and
                 bot.get("State", {}).get("OOMKilled") is False,
-                "Bot0 image or process unexpected")
+                "Bot0 image, container identity or process unexpected")
         time.sleep(2)
 
 def direct_one_shot(root):
