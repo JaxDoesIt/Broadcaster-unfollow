@@ -147,6 +147,14 @@ Date: 2026-10-30 CDT / 2026-10-31 UTC
 - New source-proof workflow: https://github.com/JaxDoesIt/Broadcaster-unfollow/actions/runs/41153065633 (source build/proof, not Dell deployment). Full Gradle proof and immutable image build are required before further live authorization. Do not retag stable/test, run a new Dell canary, or change friend cleanup based on a source-only claim.
 - First live trial's `no_cached_target` is evidence about that one boot, not a claim that Xbox has no friend records. The original image remains restored; cleanup remains paused per previous operator output.
 
+## Second candidate source proof: PASSED, immutable image building
+- Source branch: `fix/release160-readonly-friendcache-canary-2026-10-30`; exact source-proof commit `c889f7e957be37e1e30d0cec014630d199ef7aa6`.
+- Successful full source/Gradle/JAR proof: https://github.com/JaxDoesIt/Broadcaster-unfollow/actions/runs/41153065633.
+- Unique source artifact: ID `13023843244`, name `release160-personsummary-readonly-canary-jar`, artifact ZIP digest `sha256:df7205110c0870f9e2b3d456ffeff89183cc272e674373ca64a71b0d79a8d020` (NOT the inner JAR checksum).
+- The new read-only candidate overlay is applied after the exact original Release160 expiry-held baseline and original one-shot schema helper. It blocks the pinned upstream FriendManager's automatic and externally callable friend mutation paths, pending request handling and invite POST, and on the one-shot probe can populate a missing friend cache with one upstream friend-list GET before at most one PersonSummary GET. No other diagnostic retries, removals or normal friend-sync workflows are authorized.
+- Built candidate is NOT the old candidate digest `sha256:6877f7e...` and requires an entirely new registry image digest, operator runner/source pin and fresh approval for the expanded **up to two read-only Xbox GET** diagnostic path.
+- Immutable GHCR image build workflow: https://github.com/JaxDoesIt/Broadcaster-unfollow/actions/runs/41153311035. As of this checkpoint, build underway and **no new candidate image digest verified**; never promote, deploy or rerun earlier 120s trial on this evidence alone.
+
 ## Safety and next gate
 - No Dell access, no Bot0 restart, no fleet restart, no Xbox API request, no database access, no friend cleanup, no GHCR test/stable promotion occurred.
 - Source probes never authorize deletion. Friend removal remains intentionally denied. Cleanup remains paused.
