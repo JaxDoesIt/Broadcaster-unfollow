@@ -162,9 +162,22 @@ def compose_context(bot):
             "invalid Compose project identity")
     require(service == BOT, "unexpected Bot0 Compose service")
     require(home and Path(home).is_dir(), "Compose workdir unavailable")
-    require(len(files) == 1 and bool(files[0].strip()), "multiple or missing Compose files")
+    require(len(files) in (1, 2) and bool(files[0].strip()),
+            "unexpected Compose file count")
     source = Path(files[0].strip())
-    require(source.is_file(), "Compose file missing")
+    require(source.is_file() and not source.is_symlink(),
+            "original Compose file missing or unsafe")
+    if len(files) == 2:
+        # Docker Compose persists the -f override paths in container labels.
+        # The previous exact-digest rollback recreated Bot0 with a private
+        # temporary recovery.yml that was securely removed afterward.
+        # Recognize ONLY that known stale historical label, never an active
+        # second source, and never read or execute the missing file.
+        stale = Path(files[1].strip())
+        require(stale.is_absolute() and stale.name == "recovery.yml" and
+                stale.parent.name.startswith("mcgateway-bot0-canary-") and
+                not stale.exists() and not stale.is_symlink(),
+                "unrecognized or still-present Compose override")
     return project, service, str(Path(home).resolve()), str(source.resolve())
 
 def compose_args(context, override=None):
