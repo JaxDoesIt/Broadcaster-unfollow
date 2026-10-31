@@ -33,6 +33,10 @@ Done criteria are sequential:
 - Original production image continues to run normal production behavior. A test image marked `production-ready=false` is diagnostic only, not a replacement release.
 - A successful `RECOVERY VERIFIED` is **Docker/image/hold recovery**, not proof a Minecraft player can join. Record the owner's separate Hub/player functional confirmation whenever available.
 
+### New transport-parity restriction after HTTP 400
+
+The V4 probe is **not transport-identical** to original upstream. Original: shared Methanol HTTP/1.1, `Redirect.NORMAL`, original `accept-language` header; probe: separate JDK client, `Redirect.NEVER`, Java default HTTP version, different headers/timeouts. This difference must be explicitly handled in offline request-construction and client-policy tests before any new live canary. **Never enable automatic redirect following** merely to match the original: it may cause additional unreviewed requests outside the one-GET boundary. Never present a source-level request difference as a proven cause of HTTP 400.
+
 ## 3. Data privacy and network rules
 
 > [!CAUTION]
