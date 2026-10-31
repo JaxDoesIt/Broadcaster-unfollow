@@ -22,6 +22,10 @@ These links require authorized access to the private repository. They are **hist
 - [DEPLOYMENT_SAFETY.md](https://github.com/JaxDoesIt/MCGateway/blob/fix/release160-presence-continuation-2026-10-29/docs/operations/DEPLOYMENT_SAFETY.md): global Dell, Control Bot and Hub safe-change boundaries.
 - [RELEASE160_BOT0_SUPERVISED_RUNBOOK.md](https://github.com/JaxDoesIt/MCGateway/blob/fix/release160-presence-continuation-2026-10-29/docs/operations/RELEASE160_BOT0_SUPERVISED_RUNBOOK.md): historical Bot0 rollback concepts. Its "NOT APPROVED" heading is dated; never use the old source-only procedure verbatim for the V4 diagnostic. Use the separately CI-proven V4 runner only after fresh owner approval.
 
+## Private MCGateway back-link to this handoff
+
+A docs-only private bridge has also been created at [RELEASE160_PERSONSUMMARY_V4_GIT_POINTER_2026-10-30.md](https://github.com/JaxDoesIt/MCGateway/blob/docs/release160-personsummary-bridge-2026-10-30/docs/handoffs/RELEASE160_PERSONSUMMARY_V4_GIT_POINTER_2026-10-30.md), commit `425c617594baf537b49d0d5f1971809062986039`. It points back to the canonical public runbook and separates private Control Bot/count/cleanup acceptance gates. No Control Bot source, service or production state was changed.
+
 ## Three separate gates, NEVER conflate
 
 1. **Friend-list/PersonSummary contract discovery (this handoff).** Read-only Xbox GET(s), coarse status/shape evidence, diagnostic only. Current last live result: V3 `list_other` of unknown exact HTTP code. V4 offline-proven exact-code helper is **not installed on Dell** and is waiting for specific fourth-trial owner approval.
