@@ -26,6 +26,10 @@ This branch was deliberately created so a new assistant can start from **Git wit
 >
 > The current task is offline investigation of the actual **HTTP 400**. Compare the original upstream `FriendManager.get()` request with V4's GET: the original includes `Accept-Language: en-GB`, V4 does not; V4 adds `Accept: application/json` and `Cache-Control: no-store`. Also compare the different Microsoft-documented social endpoint. These are hypotheses only. Update Git docs with grounded findings, source-only tests and no production modifications.
 
+## Updated engineering direction after owner challenge
+
+The project direction is now **reuse the old proven application architecture and adapt only changed Release160 interfaces**. Read [REUSE_FIRST_REPAIR_STRATEGY.md](./REUSE_FIRST_REPAIR_STRATEGY.md) before building another standalone probe. Friend-count refresh had a known `accounts list`/console framing mismatch; the original cleanup command and Control Bot queue logic still exist. The fourth HTTP400 came from PeopleHub GET, **not** the separate social friendship DELETE endpoint. First make an old/new compatibility matrix and continue the existing source-only friend-count proof project in the private MCGateway repo; only research PeopleHub further if it directly unblocks the selected adapter. No production action is authorized.
+
 ## Retrieval and continuity rules
 
 - Use the GitHub connection to fetch exact content. If GitHub connector is unavailable, follow the public file links in a browser.
