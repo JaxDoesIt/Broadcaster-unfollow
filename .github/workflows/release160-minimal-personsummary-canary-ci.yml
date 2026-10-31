@@ -45,7 +45,7 @@ jobs:
           test "$(git -C upstream rev-parse HEAD)" = "$UPSTREAM_SHA"
           # This MUST be the old relay-audit-expiry-held-v2 overlay,
           # not the experimental friend-count-v3/presence-retry candidate.
-          ! grep -Fq 'M c g a t e w a y P r e s e n c e R e t r y' overlay/tools/apply_mcgateway_release160_patch.py
+          ! grep -Fq 'MCGATEWAY_XBOX_PRESENCE_POST_ACCEPTED' overlay/tools/apply_mcgateway_release160_patch.py
           python3 -B overlay/tools/test_release160_patch.py upstream
           python3 -B overlay/tools/apply_mcgateway_release160_patch.py upstream
           PYTHONDONTWRITEBYTECODE=1 python3 -B overlay/tools/release160/test_apply_personsummary_canary.py
