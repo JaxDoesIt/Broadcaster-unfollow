@@ -1,0 +1,97 @@
+name: Release160 original-baseline accounts-list unavailable producer proof
+
+on:
+  push:
+    branches:
+      - fix/release160-accounts-list-producer-unavailable-2026-10-31
+    paths:
+      - '.github/workflows/release160-accounts-list-producer-proof-ci.yml'
+      - 'tools/release160/apply_accounts_list_producer_v160.py'
+      - 'tools/release160/McgatewaySocialCountV160.java'
+      - 'tools/release160/McgatewaySocialCountV160Test.java'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pinned-source-and-fake-http:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      UPSTREAM_SHA: 798d8b3a6107359643b525f1c9c3303c020ae09b
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: MCXboxBroadcast/Broadcaster
+          ref: 798d8b3a6107359643b525f1c9c3303c020ae09b
+          path: upstream
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          path: overlay
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/wrapper-validation@v4
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Reconstruct original exact production overlay and apply guarded source repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C upstream rev-parse HEAD)" = "$UPSTREAM_SHA"
+          test "$(git -C overlay hash-object tools/apply_mcgateway_release160_patch.py)" = "f4114376354b18e3b7541aa4af8bc6103b3b3b53"
+          test "$(git -C overlay hash-object tools/test_release160_patch.py)" = "b5cfd61bd0e21434504eeb4a67f86e2a7e13a280"
+          test "$(git -C overlay hash-object tools/release160/config-proof.gradle.kts)" = "b76d20e5603ad1eb212fd913ce17e861862c3853"
+          ! grep -Fq 'MCGATEWAY_XBOX_PRESENCE_POST_ACCEPTED' overlay/tools/apply_mcgateway_release160_patch.py
+          python3 -B overlay/tools/test_release160_patch.py upstream
+          python3 -B overlay/tools/apply_mcgateway_release160_patch.py upstream
+          python3 -B overlay/tools/release160/apply_accounts_list_producer_v160.py upstream \
+            overlay/tools/release160/McgatewaySocialCountV160.java
+          test "$(python3 -B overlay/tools/release160/apply_accounts_list_producer_v160.py upstream \
+            overlay/tools/release160/McgatewaySocialCountV160.java)" = "UNCHANGED"
+          mkdir -p upstream/core/src/mcgatewayProof/java/com/rtm516/mcxboxbroadcast/core
+          cp overlay/tools/release160/McgatewaySocialCountV160Test.java \
+            upstream/core/src/mcgatewayProof/java/com/rtm516/mcxboxbroadcast/core/
+          cat overlay/tools/release160/config-proof.gradle.kts >> upstream/core/build.gradle.kts
+          cat >> upstream/core/build.gradle.kts <<'EOF'
+          tasks.register<JavaExec>("mcgatewaySocialCountV160Proof") {
+              dependsOn(mcgatewayProof.classesTaskName)
+              classpath = mcgatewayProof.runtimeClasspath
+              mainClass.set("com.rtm516.mcxboxbroadcast.core.McgatewaySocialCountV160Test")
+              maxHeapSize = "128m"
+          }
+          EOF
+          git -C upstream diff --check
+          grep -Fq 'MCGATEWAY_RELEASE160_EXPIRY_HOLD' upstream/core/src/main/java/com/rtm516/mcxboxbroadcast/core/SessionManager.java
+          ! grep -Fq 'scheduleWithFixedDelay(this::expireFriends' upstream/core/src/main/java/com/rtm516/mcxboxbroadcast/core/SessionManager.java
+          grep -Fq 'friends remove is DENIED' upstream/bootstrap/standalone/src/main/java/com/rtm516/mcxboxbroadcast/bootstrap/standalone/StandaloneLoggerImpl.java
+          grep -Fq 'MCGATEWAY_ACCOUNTS_LIST_V160 result=' upstream/core/src/main/java/com/rtm516/mcxboxbroadcast/core/SessionManager.java
+          grep -Fq 'result=unavailable reason=worker-exception' upstream/core/src/main/java/com/rtm516/mcxboxbroadcast/core/SessionManager.java
+          grep -Fq 'response.statusCode()' upstream/core/src/main/java/com/rtm516/mcxboxbroadcast/core/SessionManagerCore.java
+          ! grep -Fq 'case "friendcountv2" ->' upstream/bootstrap/standalone/src/main/java/com/rtm516/mcxboxbroadcast/bootstrap/standalone/StandaloneLoggerImpl.java
+          echo 'Exact source pins and friend deletion holds verified.'
+
+      - name: Compile Release160 original production overlay and run fake status/body proof
+        working-directory: upstream
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./gradlew --no-daemon --max-workers=2 -Dorg.gradle.jvmargs=-Xmx2g \
+            :core:mcgatewaySocialCountV160Proof \
+            :core:mcgatewayConfigCompatibility \
+            :bootstrap-standalone:classes
+          echo 'All mock HTTP/error and baseline compilation checks passed.'
+
+      - name: Final no-production-action scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -z "$(git -C overlay status --porcelain)"
+          ! grep -Fq '.DELETE()' overlay/tools/release160/McgatewaySocialCountV160.java
+          ! grep -Fq '.POST(' overlay/tools/release160/McgatewaySocialCountV160.java
+          ! grep -Fq '.DELETE()' overlay/tools/release160/apply_accounts_list_producer_v160.py
+          echo 'SOURCE ONLY: no Docker build, image push, bot restart, Xbox calls, live DB, or friend cleanup.'
