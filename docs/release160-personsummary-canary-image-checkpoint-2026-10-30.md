@@ -215,6 +215,14 @@ Date: 2026-10-30 CDT / 2026-10-31 UTC
 - The last two live trials restored Bot0 original image; user independently confirmed Bot0 functional after the second trial. Last observed cleanup status was paused. **No third Bot0 trial, maintenance hold, image replacement, live Xbox request or cleanup change was performed during V3 offline preparation.**
 - Next gate: separately obtain explicit operator approval for any third live Bot0-only temporary interruption and two additional GETs; fresh checks must confirm current state, paused cleanup, updater/Watchtower, exact original image and stable other 15. Runner must restore original digest even when the diagnostic is unverified. If recovery cannot be verified, hold remains and operator must inspect rather than rerun.
 
+## Third Bot0-only live trial: explicit owner approval recorded (not yet executed)
+- Owner explicitly replied `approved` to proceeding with the source-tested V3 trial after independent confirmation Bot0 was functional following the second rollback.
+- Before delivering the command, reverified GitHub successful runs: V3 source/JAR proof `41160055385`, V3 immutable image `41160318903`, V3 mock-only 24-test runner suite `41160456805`.
+- GitHub runner source pinned at `0af042dcedc85a92e21fd9181e0c0a400923e7a6` and SHA-256 `007f7ebaad7ba288d3bff10dc5890b599e5273159684f38155047ec42eece7d7`; sanitizer SHA-256 `ac9d3a7c5c78dcf517f7e8e2a9407f7f1bc2b1739b2c896e60300830965b74d8`.
+- Exact one-container V3 candidate `ghcr.io/jaxdoesit/mcgateway-broadcast@sha256:2f86cd48b94f298456f18e6937b38a5347e5de0d591d9c6107c209c159b04b80`; original immutable rollback image `ghcr.io/jaxdoesit/mcgateway-broadcast@sha256:1b6e1dad197b82a97546bf352cadb5426eb7537fee9a24eb9160e8b00f5a3e55`.
+- Scope of approval: temporary Bot0-only recreation, maintenance hold, single read-only Xbox friend-list GET and at most one PersonSummary GET, automatic rollback to original exact digest and clear hold only after recovery verified. Other 15 bots, paused friend cleanup, updater and stable/test release tags must remain unchanged. Normal startup Xbox traffic is possible, but no friend-management mutations are authorized.
+- This checkpoint records authorization and prepared command only; **no actual third test result, Dell command execution or safe recovery is claimed yet**. Await the operator's sanitized output and independent functional verification.
+
 ## Safety and next gate
 - No Dell access, no Bot0 restart, no fleet restart, no Xbox API request, no database access, no friend cleanup, no GHCR test/stable promotion occurred.
 - Source probes never authorize deletion. Friend removal remains intentionally denied. Cleanup remains paused.
