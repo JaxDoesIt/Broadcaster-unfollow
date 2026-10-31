@@ -155,6 +155,16 @@ Date: 2026-10-30 CDT / 2026-10-31 UTC
 - Built candidate is NOT the old candidate digest `sha256:6877f7e...` and requires an entirely new registry image digest, operator runner/source pin and fresh approval for the expanded **up to two read-only Xbox GET** diagnostic path.
 - Immutable GHCR image build workflow: https://github.com/JaxDoesIt/Broadcaster-unfollow/actions/runs/41153311035. As of this checkpoint, build underway and **no new candidate image digest verified**; never promote, deploy or rerun earlier 120s trial on this evidence alone.
 
+## NEW immutable read-only candidate published, not deployed
+- Image CI completed success: https://github.com/JaxDoesIt/Broadcaster-unfollow/actions/runs/41153311035.
+- Unique image tag: `ghcr.io/jaxdoesit/mcgateway-broadcast:release-160-personsummary-readonly-cache-canary-20261031-c889f7e`.
+- **Exact new image digest:** `ghcr.io/jaxdoesit/mcgateway-broadcast@sha256:8768767c73ce9d29e80e81beaf2c1e6d3cbdbd4590e056fb06d32b1dde136722`. Do not substitute or overwrite old candidate digest `sha256:6877f7e...`.
+- Image inherits base exactly at `ghcr.io/jaxdoesit/mcgateway-broadcast@sha256:1b6e1dad197b82a97546bf352cadb5426eb7537fee9a24eb9160e8b00f5a3e55`. It only replaces the standalone JAR with the source-proven read-only candidate and adds explicit image labels `io.mcgateway.friend-mutations-disabled=true`, `io.mcgateway.production-ready=false`, source revision `c889f7e957be37e1e30d0cec014630d199ef7aa6`. CI verified the inner JAR SHA-256 after building the image without running the broadcaster.
+- Prepared **separate new** operator script `tools/release160/owner_bot0_personsummary_readonly_trial.py` at Git blob `57c9827ffe41f345f167fb6294e3b639cd5750b0`. It pins the NEW candidate by immutable digest, verifies candidate labels and 14 seconds of stable boot (not 120s auto-sync), preserves the exact original-image rollback, 16-bot isolation, paused cleanup/update, stopped Watchtower, private Bot0 maintenance marker, a single direct console command and redacted output. No Dell command or Xbox GET has been issued from this script.
+- The new runner is a small modification of the previously offline-mocked runner (run `41152033299`); **its own new mocked lifecycle CI has not yet passed**. It must not be represented as fully tested or safe for execution until that proof is obtained.
+- Crucially, a new live test changes permission from up to one PersonSummary GET to up to **one extra read-only friend-list GET plus one PersonSummary GET**. Request fresh owner authorization before deploying the new candidate. No friend removal, updater, stable/test tag, or other bot modification is authorized.
+- First live trial was successfully rolled back and Bot0 was independently confirmed fully functional by the operator. This source/image work made no new production changes.
+
 ## Safety and next gate
 - No Dell access, no Bot0 restart, no fleet restart, no Xbox API request, no database access, no friend cleanup, no GHCR test/stable promotion occurred.
 - Source probes never authorize deletion. Friend removal remains intentionally denied. Cleanup remains paused.
