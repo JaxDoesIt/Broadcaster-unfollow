@@ -14,10 +14,10 @@ PROBE_FROM = '''        if (lastFriendCache == null || lastFriendCache.isEmpty()
         String target = null;
         for (var person : lastFriendCache) {'''
 PROBE_TO = '''        // MCGATEWAY_PERSONSUMMARY_READONLY_CACHE_V2
-        // One authorized, read-only population attempt: get() makes two
-        // Xbox list GETs. No friendship PUT, POST, DELETE or automatic sync.
+        // One authorized, read-only population attempt: pinned upstream
+        // get() makes one Xbox friend-list GET, no relationship mutation.
         // The console has a bounded transport deadline; never retry.
-        java.util.List<FollowerResponse.Person> snapshot = lastFriendCache;
+        var snapshot = lastFriendCache;
         if (snapshot == null || snapshot.isEmpty()) {
             try {
                 snapshot = get();
@@ -34,27 +34,23 @@ PROBE_TO = '''        // MCGATEWAY_PERSONSUMMARY_READONLY_CACHE_V2
 # entrypoint for the short-lived candidate, irrespective of live config.
 METHODS = {
     "    public void init(CoreConfig.FriendSyncConfig friendSyncConfig) {":
-        "        if (mcgPersonSummaryReadonlyCandidate()) { shouldAcceptPendingRequests = false; return; }",
+        "        if (mcgPersonSummaryReadonlyCandidate()) { autoFriend = false; return; }",
     "    public void add(String xuid, String gamertag) {":
         "        if (mcgPersonSummaryReadonlyCandidate()) return;",
     "    public boolean addIfRequired(String xuid, String gamertag) {":
         "        if (mcgPersonSummaryReadonlyCandidate()) return false;",
     "    public void remove(String xuid, String gamertag) {":
         "        if (mcgPersonSummaryReadonlyCandidate()) return;",
-    "    public void removeRelationship(String xuid) throws Exception {":
-        "        if (mcgPersonSummaryReadonlyCandidate()) throw new IllegalStateException(\"Read-only diagnostic cannot remove relationships\");",
-    "    public void forceUnfollow(String xuid) throws Exception {":
-        "        if (mcgPersonSummaryReadonlyCandidate()) throw new IllegalStateException(\"Read-only diagnostic cannot remove followers\");",
     "    private void internalProcess() {":
         "        if (mcgPersonSummaryReadonlyCandidate()) return;",
     "    private void callInternalProcess() {":
         "        if (mcgPersonSummaryReadonlyCandidate()) return;",
-    "    public synchronized void acceptPendingFriendRequests() {":
+    "    public void acceptPendingFriendRequests() {":
         "        if (mcgPersonSummaryReadonlyCandidate()) return;",
     "    private void initAutoFriend(CoreConfig.FriendSyncConfig friendSyncConfig) {":
         "        if (mcgPersonSummaryReadonlyCandidate()) return;",
-    "    private void sendInviteOnce(String xuid) {":
-        "        if (mcgPersonSummaryReadonlyCandidate()) return;",
+    "    private void declineFriendRequest(String xuid) throws Exception {":
+        "        if (mcgPersonSummaryReadonlyCandidate()) throw new IllegalStateException(\"Read-only diagnostic cannot decline requests\");",
     "    public void sendInvite(String xuid) {":
         "        if (mcgPersonSummaryReadonlyCandidate()) return;",
 }
