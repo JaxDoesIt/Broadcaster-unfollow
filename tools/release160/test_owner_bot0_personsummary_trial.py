@@ -136,5 +136,82 @@ class PureIsolationTests(unittest.TestCase):
             self.assertEqual(sent.call_count, 1)
             self.assertEqual(result, "PERSONSUMMARY_DIAGNOSTIC result=UNVERIFIED can_authorize_removal=false")
 
+
+class MockedLifecycleTests(unittest.TestCase):
+    def exercise(self, candidate_boot_failure):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder) / "control"
+            (root / "data").mkdir(parents=True)
+            marker = root / "data" / ".release160-bot0-maintenance-hold"
+            state = {"image": "baseline-id"}
+            snapshots = {name: {"id": "container-" + name, "image": "baseline-id"}
+                         for name in t.FLEET}
+            original = {
+                "services": {
+                    t.BOT: {"image": "ghcr.io/original:tag", "container_name": t.BOT,
+                            "volumes": [{"type": "bind", "source": "/PRIVATE", "target": "/opt/app/config"}]},
+                    "mcgatewaybot1-docker": {"image": "existing-other-image"}
+                },
+                "networks": {}, "volumes": {}
+            }
+            def inspect(kind, name):
+                if kind == "image":
+                    return {"Id": "baseline-id"}
+                if name == "watchtower":
+                    return {"State": {"Running": False}}
+                if name == t.BOT:
+                    return {"Image": state["image"],
+                            "Config": {"Tty": True, "OpenStdin": True},
+                            "State": {"Running": True, "OOMKilled": False}}
+                raise AssertionError("unplanned inspect")
+
+            def effective(_context, override=None):
+                data = copy.deepcopy(original)
+                if override is not None:
+                    data["services"][t.BOT]["image"] = (
+                        t.CANDIDATE if "canary" in str(override) else t.ORIGINAL
+                    )
+                return data
+
+            def recreate(_context, override):
+                state["image"] = (
+                    "candidate-id" if "canary" in str(override) else "baseline-id"
+                )
+                transitions.append(state["image"])
+
+            def boot(expected_id, seconds):
+                self.assertEqual(state["image"], expected_id)
+                if candidate_boot_failure and expected_id == "candidate-id":
+                    raise t.Unsafe("simulated candidate boot failure")
+
+            transitions = []
+            with patch.object(t.os, "geteuid", return_value=0), \
+                 patch.object(t.sys, "argv", ["script.py", "--execute-authorized-bot0-only"]), \
+                 patch.object(t, "locate_control_bot", return_value=(root, 1234)), \
+                 patch.object(t, "paused_cleanup", return_value=True), \
+                 patch.object(t, "paused_updates"), \
+                 patch.object(t, "docker_inspect", side_effect=inspect), \
+                 patch.object(t, "fleet_snapshot", return_value=snapshots), \
+                 patch.object(t, "original_identity"), \
+                 patch.object(t, "compose_context", return_value=("mcgateway", t.BOT, folder, "fake-compose.yml")), \
+                 patch.object(t, "compose_config", side_effect=effective), \
+                 patch.object(t, "other_bots_unchanged", return_value=True), \
+                 patch.object(t, "cmd", return_value=b"mocked pull"), \
+                 patch.object(t, "confirm_image", side_effect=lambda ref: "candidate-id" if ref == t.CANDIDATE else "baseline-id"), \
+                 patch.object(t, "recreate", side_effect=recreate), \
+                 patch.object(t, "verified_boot", side_effect=boot), \
+                 patch.object(t, "direct_one_shot", return_value="PERSONSUMMARY_DIAGNOSTIC result=OBSERVED http=200 fields=two_boolean_fields can_authorize_removal=false"):
+                outcome = t.main()
+            self.assertEqual(state["image"], "baseline-id")
+            self.assertEqual(transitions, ["candidate-id", "baseline-id"])
+            self.assertFalse(marker.exists(), "successful restoration clears only its own hold")
+            self.assertEqual(outcome, 2 if candidate_boot_failure else 0)
+
+    def test_successful_mock_trial_restores_exact_original(self):
+        self.exercise(False)
+
+    def test_failed_mock_canary_boot_restores_and_removes_hold(self):
+        self.exercise(True)
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
