@@ -1,0 +1,6 @@
+# Build-only one-shot, nonmutating friendcache GET diagnostic candidate.
+# The CI workflow supplies an exact digest for the existing Release160 base.
+# This image inherits the exact original runtime; the JAR disables candidate friend mutations and only makes read-only friend-list/summary GETs for the diagnostic.
+ARG MCGATEWAY_BASE_IMAGE
+FROM ${MCGATEWAY_BASE_IMAGE}
+COPY --chown=app:app bootstrap/standalone/build/libs/MCXboxBroadcastStandalone.jar /opt/app/MCXboxBroadcastStandalone.jar
