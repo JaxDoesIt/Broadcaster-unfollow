@@ -67,3 +67,7 @@ Diagnose the Release 160 Xbox friendship relationship semantics and **prove, wit
 https://github.com/JaxDoesIt/Broadcaster-unfollow/blob/docs/release160-personsummary-continuation-2026-10-30/docs/release160-personsummary/START_HERE.md
 
 _This is a Git documentation pathway, not a scheduled job or a standing permission to touch production._
+
+## October 31 existing-log discovery: count producer may fail before emitting output
+
+A privacy-sanitized read-only Docker logs sample from Bot0/1/2 displayed repeated `accounts list` prompt plus `Loading status of sessions...`, but **none** of the expected `Primary Session:`, `Friends: N/1000` or `No sub-sessions` results in stdout. This is not proof the Xbox endpoint failed: initial filter omitted stderr and only accepted strict INFO framing. The exact upstream `SessionManager.listSessions()` logs Loading synchronously then runs `scheduledThreadPool.execute`: `socialSummary().targetFriendCount()` must complete before *any* result lines are logged, and that worker has no enclosing try/catch. Source-level null/non-200 handling is incomplete; an exception may stop that task silently. **Next action**: read-only sanitized classify both Docker streams for count frames/errors and timestamps, no new console command, GET, bot restart, cleanup unpause or source deployment. On missing results, prioritize *producer* error/response repair over wiring an output parser. Details and explicit no-action gates: private `JaxDoesIt/MCGateway:fix/release160-count-display-adapter-2026-10-31`, `docs/CURRENT_STATE.md`.
