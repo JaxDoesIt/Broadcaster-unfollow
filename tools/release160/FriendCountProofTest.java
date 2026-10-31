@@ -22,9 +22,9 @@ public final class FriendCountProofTest {
         for (int status : List.of(206, 302, 400, 404, 429, 500, 503)) {
             final int candidateStatus = status;
             expectFailure(() -> McgatewayFriendCountProof.capture(new Stub(
-                resp("{\\"targetFriendCount\\":1}"),
-                new McgatewayFriendCountProof.Response(candidateStatus, Map.of("Content-Type", List.of("application/json")), "{\\"people\\":[{\\"xuid\\":\\"7\\",\\"isFriend\\":true}]}"),
-                resp("{\\"targetFriendCount\\":1}")), "Bearer hidden", NONCE));
+                resp("{\"targetFriendCount\":1}"),
+                new McgatewayFriendCountProof.Response(candidateStatus, Map.of("Content-Type", List.of("application/json")), "{\"people\":[{\"xuid\":\"7\",\"isFriend\":true}]}"),
+                resp("{\"targetFriendCount\":1}")), "Bearer hidden", NONCE));
         }
         failWith(new McgatewayFriendCountProof.Response(500, Map.of(), "{}"));
         failWith(new McgatewayFriendCountProof.Response(200, Map.of("Content-Type", List.of("text/plain")), "{\"targetFriendCount\":0}"));
@@ -35,9 +35,9 @@ public final class FriendCountProofTest {
         for (String key : List.of("totalCount", "startIndex", "maxItems", "pageSize", "pageCount", "pageNumber", "hasNext")) paginationBody(key);
         for (String key : List.of("totalCount", "startIndex", "maxItems", "pageSize", "pageCount", "pageNumber", "hasNext")) {
             expectFailure(() -> McgatewayFriendCountProof.capture(new Stub(
-                resp("{\\"targetFriendCount\\":1}"),
-                resp("{\\"people\\":[{\\"xuid\\":\\"7\\",\\"isFriend\\":true}],\\"metadata\\":{\\"" + key + "\\":1}}"),
-                resp("{\\"targetFriendCount\\":1}")), "Bearer hidden", NONCE));
+                resp("{\"targetFriendCount\":1}"),
+                resp("{\"people\":[{\"xuid\":\"7\",\"isFriend\":true}],\"metadata\":{\"" + key + "\":1}}"),
+                resp("{\"targetFriendCount\":1}")), "Bearer hidden", NONCE));
         }
         expectFailure(() -> McgatewayFriendCountProof.capture(new Stub(resp("{\"targetFriendCount\":0}"), resp("{\"people\":[]}"), resp("{\"targetFriendCount\":0}")), "Bearer hidden", NONCE.toUpperCase()));
         for (String summary : List.of("{}", "{\"targetFriendCount\":\"1\"}", "{\"targetFriendCount\":null}", "{\"targetFriendCount\":1.0}", "{\"targetFriendCount\":-1}", "{\"targetFriendCount\":1,\"targetFriendCount\":1}")) fail("[]", summary);
