@@ -1,5 +1,15 @@
 # Release 160 PersonSummary | NEXT STEPS AND TASK PATHWAY
 
+## Latest October 31 repair and next exact CI gate
+
+- [x] Two owner **read-only** log inspections now showed repeated `accounts list` and Loading on Bot0/1/2, but no recognized result/errors. Second scan read **both stdout and stderr**, classified labels only, no private identifiers and no new Xbox command or GET.
+- [x] Upstream Release160 `SessionManager.listSessions()` logs Loading synchronously and buffers the rest in an unguarded scheduled worker. A failed/null/non-200 social summary **can** abort or yield invalid count, but exact live response/error remains unknown.
+- [x] On separate public production-variant base `fix/release160-accounts-list-producer-unavailable-2026-10-31` added 4 **new-only source files** for bounded strict HTTP200 count field parsing, sanitized unavailable receipt, guarded patch preserving old friend-expiry/removal holds, and Java21 mocked compile workflow. Workflow commit `562228cb42cd72e754d94791cbf8f7b375319a0c`. No runtime changes.
+- [ ] **NEXT:** independent GitHub Actions status/logs for `.github/workflows/release160-accounts-list-producer-proof-ci.yml` on branch above; fix CI if red. Do NOT deploy until pinned baseline compile and mock tests pass.
+- [ ] Consider owner-approved observational canary only after safety/rollback/digest review; do not perform a fifth live trial solely to reproduce known PeopleHub HTTP 400.
+- [ ] Keep friend count **provisional**. Source output fixes cannot itself establish genuine Xbox friendship truth for capacity; friend cleanup remains paused pending independent two-direction verified removal receipts and explicit one-target approval.
+
+
 Read [START_HERE](./START_HERE.md), [RULEBOOK](./RULEBOOK.md) and [STATUS_AND_EVIDENCE](./STATUS_AND_EVIDENCE.md) first.
 
 ## Cross-repository implementation handoff (October 31, newer than V4-only tasks)
