@@ -1,0 +1,46 @@
+name: Release160 V4 exact HTTP status Bot0 operator (mock-only safety)
+
+on:
+  push:
+    branches:
+      - build/release160-friendlist-http-code-v4-2026-10-30
+    paths:
+      - 'tools/release160/owner_bot0_friendlist_http_code_v4_trial.py'
+      - 'tools/release160/test_owner_bot0_friendlist_http_code_v4_trial.py'
+      - 'tools/release160/test_bot0_compose_recovery_labels_v4.py'
+      - 'tools/release160/personsummary_console_result.py'
+      - 'tools/release160/test_personsummary_console_result.py'
+      - '.github/workflows/release160-friendlist-http-code-v4-operator-ci.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  v3-offline-rollback-and-redaction-tests:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Verify V3 syntax, mock recovery and allowlisted output only
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B -m py_compile \
+            tools/release160/owner_bot0_friendlist_http_code_v4_trial.py \
+            tools/release160/test_owner_bot0_friendlist_http_code_v4_trial.py \
+            tools/release160/test_bot0_compose_recovery_labels_v4.py \
+            tools/release160/personsummary_console_result.py \
+            tools/release160/test_personsummary_console_result.py
+          PYTHONDONTWRITEBYTECODE=1 python3 -B tools/release160/test_personsummary_console_result.py
+          PYTHONDONTWRITEBYTECODE=1 python3 -B tools/release160/test_bot0_compose_recovery_labels_v4.py
+          PYTHONDONTWRITEBYTECODE=1 python3 -B tools/release160/test_owner_bot0_friendlist_http_code_v4_trial.py
+          sha256sum \
+            tools/release160/owner_bot0_friendlist_http_code_v4_trial.py \
+            tools/release160/personsummary_console_result.py
+          echo "PASS: offline V4 tests only. No Docker, Xbox, Dell or production actions."
