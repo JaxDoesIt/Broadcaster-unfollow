@@ -86,6 +86,31 @@ jobs:
           ./gradlew --no-daemon --max-workers=2 -Dorg.gradle.jvmargs=-Xmx2g \
             :core:mcgatewayPersonSummaryProbeProof \
             :bootstrap-standalone:classes
+      - name: Build standalone canary JAR without publishing an image
+        working-directory: upstream
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./gradlew --no-daemon --max-workers=2 -Dorg.gradle.jvmargs=-Xmx2g \
+            :bootstrap-standalone:build
+          JAR="bootstrap/standalone/build/libs/MCXboxBroadcastStandalone.jar"
+          test -s "$JAR"
+          jar tf "$JAR" > "$RUNNER_TEMP/release160-canary-jar-entries.txt"
+          grep -Fqx 'com/rtm516/mcxboxbroadcast/core/McgatewayXboxPersonSummaryProbeV160.class' \
+            "$RUNNER_TEMP/release160-canary-jar-entries.txt"
+          grep -Fqx 'com/rtm516/mcxboxbroadcast/bootstrap/standalone/StandaloneLoggerImpl.class' \
+            "$RUNNER_TEMP/release160-canary-jar-entries.txt"
+          sha256sum "$JAR" > "$JAR.sha256"
+          echo "Standalone canary JAR verified; no container build or live action."
+      - name: Upload standalone canary JAR and checksum (not a Docker image)
+        uses: actions/upload-artifact@v4
+        with:
+          name: release160-personsummary-canary-jar
+          path: |
+            upstream/bootstrap/standalone/build/libs/MCXboxBroadcastStandalone.jar
+            upstream/bootstrap/standalone/build/libs/MCXboxBroadcastStandalone.jar.sha256
+          if-no-files-found: error
+          retention-days: 3
       - name: Verify restricted output, no removal and no image publication
         shell: bash
         run: |
