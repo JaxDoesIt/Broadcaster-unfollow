@@ -1,5 +1,16 @@
 # Release 160: Xbox friend-list / PersonSummary diagnostic | START HERE
 
+## Latest October 31 producer repair branch, not deployed
+
+The owner supplied a second **read-only stdout+stderr** Docker log audit of three production bots: Bot0/1/2 had respectively **4/12/12** `accounts list` commands and same count `Loading status of sessions...` frames, with **no recognized primary-session, friend-count, completed result, or known error frames**. This narrows the observed break to async producer response generation or logging, not Control Bot command delivery; exact Xbox failure remains unknown.
+
+The pinned upstream Release160 `SessionManager.listSessions()` logs Loading first, then runs `scheduledThreadPool.execute`. Inside that worker it gathers `socialSummary().targetFriendCount()` before logging any result lines, with no catch/always-final status marker. `SessionManagerCore.socialSummary()` does not check HTTP status, field presence or non-null body. A swallowed exception is plausible, not confirmed.
+
+**New focused public branch:** `JaxDoesIt/Broadcaster-unfollow:fix/release160-accounts-list-producer-unavailable-2026-10-31`, created from exact deployed-image source baseline `mcgateway/release-160-compat`. Four **new source-only files** add strict fake-tested social-summary response parsing, explicit sanitized unavailable receipt on failure, a source/production-overlay pinning patcher, and pinned Java21 build CI. Workflow source commit `562228cb42cd72e754d94791cbf8f7b375319a0c`. **New GitHub Actions CI not yet verified**. Importantly: the actual original overlay and any live image, Control Bot, DB, cleanup, friend mutation path all remain unchanged. Do not treat a provisional count as exact or let it change capacity.
+
+**Next:** Verify `release160-accounts-list-producer-proof-ci.yml` Actions run for the new public branch and inspect logs if failed; repair only source, then evaluate an approved one-bot diagnostic/deployment pathway separately. Private updated canonical recovery notes: `JaxDoesIt/MCGateway:fix/release160-count-display-adapter-2026-10-31` at `docs/CURRENT_STATE.md` and `docs/TODO.md`.
+
+
 **Canonical handoff entrypoint for new ChatGPT/Codex sessions.** Read this file and all linked documents in order **before inspecting, changing or executing anything**.
 
 > **LATEST, October 31 2026 CDT:** Four authorized **Bot0-only** live trials were completed. The fourth V4 probe returned `PERSONSUMMARY_DIAGNOSTIC result=OBSERVED http=unverified fields=list_http_400 can_authorize_removal=false`, proving that the **friend-list GET received HTTP 400 Bad Request**; it does **not** reveal the error reason. The runner verified original immutable Bot0 image restoration and maintenance-hold clearance; the owner independently confirmed **Bot0 works for players afterward**. Cleanup was still paused at recovery. **All fourth-trial approval is spent. No fifth trial is authorized.**
