@@ -28,6 +28,11 @@ RECOVERY VERIFIED: Bot0 original image running; maintenance hold cleared.
 - The user supplied no sensitive Xbox header, body, XUID, or other raw account record. The sanitized output alone is sufficient for HTTP 400 and recovery classification.
 - **Next work:** offline differential audit of pinned upstream GET vs V4 HTTP request and documented Xbox API; determine whether differences in `Accept-Language`, `Accept`, `Cache-Control`, contract version or URL could explain 400. Keep hypotheses distinct. A fifth live trial requires a separate reviewed change, offline CI, rollback proof and new owner authorization.
 
+## Offline finding after trial 4: original HTTP client differs from V4 canary
+
+- Pinned original upstream `SessionManagerCore` constructs a **Methanol HTTP/1.1**, `Redirect.NORMAL`, ~5-second-timeout shared client for `FriendManager.get()`. The V4 probe uses a **separate plain Java client** with `Redirect.NEVER`, Java HTTP/2 preference and distinct timeouts. Headers also differ: original includes `accept-language: en-GB` but not explicit `Accept`/`Cache-Control`; V4 has `Accept: application/json`/`Cache-Control: no-store` and no locale header. Source links and line references in [ENDPOINT_RESEARCH](./ENDPOINT_RESEARCH.md).
+- **This is source evidence, NOT proof of the HTTP 400 cause.** We have not observed the original friend-list GET HTTP status. Avoid changing endpoints or introducing redirected multi-GET behavior in an unapproved production test. No new image or live request was performed by this audit.
+
 ## Current confirmed / last-reported production state
 
 | Subject | Last evidence | Confidence and limit |
