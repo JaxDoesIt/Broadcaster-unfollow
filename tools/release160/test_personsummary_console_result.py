@@ -56,6 +56,57 @@ class ConsoleResultTests(unittest.TestCase):
                f"http=200 fields=list_auth can_authorize_removal=false").encode()
         self.assertIn("result=UNVERIFIED", summarize(raw, N, True))
 
+    def test_v4_all_bounded_http_codes_and_strict_redaction(self):
+        excluded = {200, 401, 403, 429}
+        for status in range(100, 500):
+            label = f"list_http_{status}"
+            raw = (
+                b"[INFO] private token=VERY_SECRET player=2533270000000022\n"
+                + (
+                    f"MCGATEWAY_PERSONSUMMARY_SCHEMA_V160 nonce={N} "
+                    f"http=unverified fields={label} can_authorize_removal=false"
+                ).encode()
+                + b"\n[INFO] original private response not printed"
+            )
+            output = summarize(raw, N, True)
+            if status in excluded:
+                self.assertEqual(
+                    output,
+                    "PERSONSUMMARY_DIAGNOSTIC result=UNVERIFIED can_authorize_removal=false",
+                    f"protected category {status} must not have exact-code alias"
+                )
+            else:
+                self.assertEqual(
+                    output,
+                    f"PERSONSUMMARY_DIAGNOSTIC result=OBSERVED "
+                    f"http=unverified fields={label} can_authorize_removal=false"
+                )
+            self.assertNotIn("VERY_SECRET", output)
+            self.assertNotIn("2533270000000022", output)
+            self.assertNotIn(N, output)
+
+        for forged in (
+            "list_http_000", "list_http_099", "list_http_500",
+            "list_http_599", "list_http_600", "list_http_999",
+            "list_http_404secret", "list_http_4040", "list_http_-1",
+            "list_http_200", "list_http_401", "list_http_403", "list_http_429"
+        ):
+            raw = (
+                f"MCGATEWAY_PERSONSUMMARY_SCHEMA_V160 nonce={N} "
+                f"http=unverified fields={forged} can_authorize_removal=false"
+            ).encode()
+            self.assertEqual(
+                summarize(raw, N, True),
+                "PERSONSUMMARY_DIAGNOSTIC result=UNVERIFIED can_authorize_removal=false",
+                forged,
+            )
+
+        wrong_scope = (
+            f"MCGATEWAY_PERSONSUMMARY_SCHEMA_V160 nonce={N} "
+            "http=200 fields=list_http_404 can_authorize_removal=false"
+        ).encode()
+        self.assertIn("result=UNVERIFIED", summarize(wrong_scope, N, True))
+
     def test_reject_ambiguous_or_unproven(self):
         cases = [
             (SAFE, N, False),
