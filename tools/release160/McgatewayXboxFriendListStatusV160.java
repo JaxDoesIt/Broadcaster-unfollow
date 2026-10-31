@@ -100,13 +100,19 @@ public final class McgatewayXboxFriendListStatusV160 {
             if (reply == null || !FRIENDS.equals(reply.uri()))
                 return fail("list_unverified");
 
-            if (reply.status() != 200)
-                return fail(switch (reply.status()) {
-                    case 401, 403 -> "list_auth";
-                    case 429 -> "list_limited";
-                    default -> reply.status() >= 500 && reply.status() < 600
-                        ? "list_server" : "list_other";
-                });
+            if (reply.status() != 200) {
+                // MCGATEWAY_FRIEND_LIST_EXACT_HTTP_V4.
+                // An HTTP code is non-private protocol metadata. Emit only
+                // a decimal code in a finite, strictly bounded range; never
+                // expose the response body, headers, URL or player identifiers.
+                int code = reply.status();
+                if (code == 401 || code == 403) return fail("list_auth");
+                if (code == 429) return fail("list_limited");
+                if (code >= 500 && code <= 599) return fail("list_server");
+                if (code >= 100 && code <= 499)
+                    return fail("list_http_" + code);
+                return fail("list_other");
+            }
 
             if (!reply.complete() || reply.body() == null
                     || reply.body().length == 0 || reply.body().length > MAX_BYTES
