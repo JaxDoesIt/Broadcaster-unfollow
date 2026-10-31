@@ -54,7 +54,7 @@ jobs:
           test "$(git -C overlay hash-object tools/release160/McgatewayXboxPersonSummaryProbeV160Test.java)" = "9ea37126bb135553fcd57d9ecffa308cc5e8bd17"
           test "$(git -C overlay hash-object tools/release160/apply_personsummary_canary.py)" = "8492f7a81fd93bc9809b7cb618110750e20502aa"
           test "$(git -C overlay hash-object tools/release160/test_apply_personsummary_canary.py)" = "92fba7b20fbe9bc5320c933c2923ae080f6db40e"
-          test "$(git -C overlay hash-object tools/release160/apply_readonly_friendcache_canary.py)" = "5e9c55c7b1aefaca27b1165f664005cc380a7b5d"
+          test "$(git -C overlay hash-object tools/release160/apply_readonly_friendcache_canary.py)" = "653ca560a282d52b144c3a929288f7acdf89781a"
           test "$(git -C overlay hash-object tools/release160/test_apply_readonly_friendcache_canary.py)" = "ac68e848d76b642ab289cc3cad7523a70c5a90c7"
           # This MUST be the old relay-audit-expiry-held-v2 overlay,
           # not the experimental friend-count-v3/presence-retry candidate.
