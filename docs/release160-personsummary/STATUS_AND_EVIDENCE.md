@@ -89,6 +89,14 @@ The full chronological working notes exist in [the historical checkpoint](../rel
 - All candidate FriendManager automatic mutation paths are disabled at source level; original production still uses original intended code and is not being replaced by a diagnostic image.
 - Sanitizer reports only `PERSONSUMMARY_DIAGNOSTIC result=OBSERVED http=... fields=... can_authorize_removal=false` or a complete fail-closed `UNVERIFIED`. The word `http` in this marker represents **PersonSummary HTTP**, while `fields=list_other` represents friend-list category.
 
+## V4 exact HTTP-code investigation (OFFLINE IN PROGRESS)
+
+- Source branch: `fix/release160-friendlist-http-code-v4-2026-10-30` from exact proven V3 source `04d7ae5906a50bcd8923813f76dcc4521ffea72a`. New source commit `66cfa52ecfa51714220a8ef6c051e44018745ebb` creates pinned [V4 source-only CI](https://github.com/JaxDoesIt/Broadcaster-unfollow/actions/runs/41161780744), which was **in progress** when recorded.
+- Change scope is deliberately limited: the identical one-GET `peoplehub` request will return `fields=list_http_<NNN>` for strictly bounded HTTP statuses 100 through 499 other than 200, 401, 403 or 429. Existing 401/403, 429, 5xx and 200 validation cases retain their original categories. Values outside valid ranges remain `list_other`. Python sanitizer accepts only the finite, typed numeric-code allowlist; sensitive payloads, auth and player IDs stay hidden.
+- Added mocked Java assertions for the full 100..499 and 500..599 ranges, fake reply injection, and Python sanitizer tests exhausting accepted/rejected code labels and secret redaction. V3 rollback/one-shot and friend-mutation guards remain source-referenced; the exact pinned Java compilation and JAR are being verified in CI.
+- Public Microsoft Learn API reference documents caller people collection at `social.xboxlive.com/users/me/people`; pinned broadcaster's original endpoint is `peoplehub.xboxlive.com/users/me/people/friends`. **This does not prove a specific HTTP error or an endpoint migration.** See [ENDPOINT_RESEARCH](./ENDPOINT_RESEARCH.md) for official references and limitations.
+- No fourth live test approved or executed, no new image published, and no Dell action initiated. V4 must pass pinned source and JAR, and separately pass image and runner proof if a live trial is later considered.
+
 ## Unresolved questions and approved work boundary
 
 > [!WARNING]
