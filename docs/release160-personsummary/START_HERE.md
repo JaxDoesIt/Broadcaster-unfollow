@@ -15,6 +15,12 @@ The upstream `SessionManager.listSessions()` prints `Friends: N/1000` from `soci
 
 **October 31 CI verification:** [Broadcaster source-only run 41244399850](https://github.com/JaxDoesIt/Broadcaster-unfollow/actions/runs/41244399850) at commit `0545880830bd9ea2241a9b167d2df3b59b7d132d` completed **SUCCESS**. Connected GitHub confirmed job `124664707435`, pinned Java21 count/config fake tests and standalone compilation succeeded. No image was promoted and no Xbox GET was executed by this workflow.
 
+## Verified CI update (October 31, latest)
+
+The private MCGateway display-only parser CI [run 41245456281](https://github.com/JaxDoesIt/MCGateway/actions/runs/41245456281) at corrected test-import commit `0bed60acad70179b0d1f53c9b001258f4b92cf43` completed **SUCCESS**. Independent job `124667827492` and logs confirm safety guard + **4/4 Node mocked log-frame tests PASS**. The three earlier red runs were all a wrong relative test import, now superseded. Public Broadcaster run `41244399850` at `0545880830bd9ea2241a9b167d2df3b59b7d132d` remains **SUCCESS** with pinned Java source mocks + standalone build.
+
+**Next is not more fake CI:** safely inspect existing sanitized (no player identifiers) real Release160 `accounts list` Docker log frames for timestamp/ANSI/INFO/order, with NO new bot command or Xbox request. Only then source-stage **provisional display** wiring may be considered. Neither green CI means friend count is confirmed accurate, authoritative capacity update is permitted, or friend cleanup may resume. Follow private `fix/release160-count-display-adapter-2026-10-31` `docs/CURRENT_STATE.md`, `docs/TODO.md` and `docs/operations/RELEASE160_ACCOUNTS_LIST_DISPLAY_ADAPTER_2026-10-31.md`.
+
 ## Read in this order
 
 1. **[RULEBOOK.md](./RULEBOOK.md)**: nonnegotiable safety, execution limits, approvals, exact source/recovery proof, Git workflow, and the standard of testing.
