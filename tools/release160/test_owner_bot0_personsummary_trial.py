@@ -179,7 +179,9 @@ class MockedLifecycleTests(unittest.TestCase):
                 )
                 transitions.append(state["image"])
 
+            boot_calls = []
             def boot(expected_id, seconds):
+                boot_calls.append((expected_id, seconds))
                 self.assertEqual(state["image"], expected_id)
                 if candidate_boot_failure and expected_id == "candidate-id":
                     raise t.Unsafe("simulated candidate boot failure")
@@ -204,6 +206,11 @@ class MockedLifecycleTests(unittest.TestCase):
                 outcome = t.main()
             self.assertEqual(state["image"], "baseline-id")
             self.assertEqual(transitions, ["candidate-id", "baseline-id"])
+            self.assertEqual(boot_calls, [
+                ("candidate-id", t.FRIEND_SYNC_WARMUP_SECONDS),
+                ("baseline-id", 14),
+            ])
+            self.assertEqual(t.FRIEND_SYNC_WARMUP_SECONDS, 120)
             self.assertFalse(marker.exists(), "successful restoration clears only its own hold")
             self.assertEqual(outcome, 2 if candidate_boot_failure else 0)
 
