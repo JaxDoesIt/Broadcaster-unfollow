@@ -4,7 +4,7 @@ Read [START_HERE](./START_HERE.md), [RULEBOOK](./RULEBOOK.md) and [STATUS_AND_EV
 
 ## Immediate objective
 
-Third owner-approved V3 test proved `fields=list_other` from one read-only friend-list GET, while Bot0 was restored and then independently confirmed functional. **Exact HTTP status is unknown.** The only legitimate next action without new owner permission is **offline investigation**.
+Fourth owner-approved V4 test returned **friend-list HTTP 400 Bad Request** on the exact original PeopleHub friends endpoint. The runner verified original Bot0 restoration and hold clearance; the owner separately confirmed real player functionality. The *HTTP status* is known; the *reason* is unknown. No fifth live trial is approved. Continue only offline analysis of the exact request and service contract.
 
 ## Checklist, in dependency order
 
@@ -17,7 +17,7 @@ Third owner-approved V3 test proved `fields=list_other` from one read-only frien
 - [x] **Gate E: decide if a fourth live trial is even necessary.** Prefer valid read-only evidence from public docs, CI, non-sensitive provider metadata, or a safer existing controlled context. Compare possible endpoint changes and scope. Do **not** jump to a fourth Bot0 interruption if only the same status is likely.
 - [x] **Gate F (conditional): prepare immutable image and new mock-tested Bot0 runner** only if further real-world evidence is necessary and worth a short Bot0 interruption. Use original image at immutable digest and one new unique canary tag/digest; preserve prior image identity, single-service Compose override, paused cleanup and original restoration; unit-test changes.
 - [x] **Gate G (separate explicit owner authorization):** show the proposed trial's purpose, bounded GET count and Bot0 interruption; only then provide one checksum-verified Dell terminal command. Await sanitized result and independent post-restore player functionality.
-- [ ] **Gate H (awaiting operator's fourth-trial output):** interpret exact outcome, update every canonical Git file, decide if PersonSummary validation can safely proceed. **No friend deletion or cleanup resume is implicit.**
+- [x] **Gate H (fourth trial executed and interpreted):** interpret exact outcome, update every canonical Git file, decide if PersonSummary validation can safely proceed. **No friend deletion or cleanup resume is implicit.**
 
 ## V4 completed source proof and active image gate
 
@@ -25,7 +25,7 @@ Third owner-approved V3 test proved `fields=list_other` from one read-only frien
 - [Source/JAR CI run 41161780744](https://github.com/JaxDoesIt/Broadcaster-unfollow/actions/runs/41161780744): **SUCCESS**, 5,535 mocked Java assertions plus source patch and Python sanitizer tests, pinned upstream compilation and standalone JAR.
 - Artifact `release160-friendlist-http-code-v4-proof-jar`, ID `13027806128`, ZIP SHA-256 `603980600ad6d0003ad5e4b7504a6f8346f13dfbea44a593694373201cb62686`. Do not conflate artifact ZIP hash with its internal JAR hash.
 - V4 keeps the same one-GET URL, method, headers and no-redirect policy as V3. It changes only a privacy-bounded returned status label to `fields=list_http_NNN` for 100..499 excluding 200/401/403/429, with all other existing classifications preserved.
-- **Superseded by the final offline readiness section below:** the V4 image and mocked runner both passed. The next open gate is separate owner approval for an actual fourth live trial.
+- **Superseded by the final offline readiness section below:** the V4 image and mocked runner both passed. Historical note: that fourth trial has now executed, so the current gate is offline HTTP400 contract analysis.
 
 ## V4 final offline readiness: all tests passed; explicit live gate remains
 
@@ -35,9 +35,18 @@ Third owner-approved V3 test proved `fields=list_other` from one read-only frien
 - Verified V4 immutable image [41162141697](https://github.com/JaxDoesIt/Broadcaster-unfollow/actions/runs/41162141697): **success**, candidate digest `sha256:4b39be565e373b5f6118716a85ec7bea8e4fab4f3bb967adba66e7b204f195ed`.
 - Verified V4 owner operator [41162253916](https://github.com/JaxDoesIt/Broadcaster-unfollow/actions/runs/41162253916): **success**, 25 offline mocks; exact script checksums documented in STATUS_AND_EVIDENCE.
 - Gate E decision: public documentation and the previous redacted output **cannot determine** which actual HTTP code V3 saw. A single additional owner-approved, temporary Bot0-only, read-only trial with V4 can now distinguish the exact code. However it **does briefly interrupt Bot0 and may not by itself solve endpoint compatibility**. Do not run automatically.
-- **Gate G owner authorization: COMPLETE.** The owner has now explicitly approved exactly one fourth Bot0-only V4 diagnostic. **Next is the operator's single checked Dell execution and interpretation**, followed by independent player functionality confirmation. If authorized, independently reverify live state and prepare a single checksummed command from the exact runner commit. The test allows at most one bounded friend-list GET plus one optional PersonSummary GET. After restoration, require independent player-functionality confirmation. Do **not** use the earlier V3 command or image.
+- **Gate G and fourth-trial execution: COMPLETE.** Trial 4 returned `fields=list_http_400`, followed by `RECOVERY VERIFIED`; the owner confirmed Bot0 works for players. This approval is consumed. No automatic repeat or fifth test.
 - **Gate H remains pending:** exact HTTP code from a successful future test, endpoint/contract decision and any later PersonSummary evidence. No friendship deletion or cleanup resume.
 - If the owner does not want another interruption, pause at this fully documented offline checkpoint. Continue only static research and mock tests.
+
+## ACTIVE NEXT WORK after fourth trial: explain HTTP 400, offline first
+
+1. **READ-ONLY SOURCE DIFFERENTIAL:** Compare pinned official upstream `FriendManager.get()` with V4 `McgatewayXboxFriendListStatusV160.capture()` at pinned SHAs. At source-review time the **URI, GET, Authorization header and contract version 7 matched**, but V4 omitted original `Accept-Language: en-GB`, added `Accept: application/json`, and added `Cache-Control: no-store`. This is an *observed difference*, NOT a proved reason for HTTP 400.
+2. **OFFICIAL CONTRACT REVIEW:** The Microsoft-documented read-only collection is `social.xboxlive.com/users/me/people`, while pinned upstream uses `peoplehub.xboxlive.com/users/me/people/friends`. Microsoft's 400 definition for its **social** API mentions malformed query parameters/user IDs but does **not** establish why the different PeopleHub endpoint replied 400. See [ENDPOINT_RESEARCH](./ENDPOINT_RESEARCH.md).
+3. **MOCKED REQUEST-PARITY GATE (not yet implemented):** Build a source-only, offline audit/testing path that checks GET method, fixed URI, version header, locale/Accept/cache policy, no redirects, single network request, XSTS header never logged, and existing friend-mutation denials. Prefer a change with one causal variable at a time. No new image/runner until a concrete hypothesis is prioritized and fake tests pass.
+4. **PAGINATION/SEMANTIC SAFETY:** Any alternate social collection API with `totalCount`/paging requires no-partial-list-as-empty tests. A successful GET still cannot authorize cleanup.
+5. **FIFTH LIVE GATE:** A new, specific owner authorization is required even if an offline candidate is built. A trial must not silently change endpoints plus multiple headers, follow redirects, retry, disclose response body, or touch other 15 bots. Prove exact rollback and owner-confirmed functionality after it.
+6. **CURRENT PRODUCTION STATUS:** Last owner report confirms Bot0 working; cleanup paused at fourth preflight/recovery. Do not interpret this as a fresh live check on subsequent dates. Nothing was changed in production after this report.
 
 ## Hypotheses to investigate, not yet facts
 
