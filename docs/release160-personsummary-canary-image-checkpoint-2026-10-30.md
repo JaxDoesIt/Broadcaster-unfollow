@@ -165,6 +165,13 @@ Date: 2026-10-30 CDT / 2026-10-31 UTC
 - Crucially, a new live test changes permission from up to one PersonSummary GET to up to **one extra read-only friend-list GET plus one PersonSummary GET**. Request fresh owner authorization before deploying the new candidate. No friend removal, updater, stable/test tag, or other bot modification is authorized.
 - First live trial was successfully rolled back and Bot0 was independently confirmed fully functional by the operator. This source/image work made no new production changes.
 
+## Read-only Bot0 operator script: change-only audit complete
+- Immutable source revision for the separate second-trial runner: `a140920820083cb3321499190316699c39550c23`, file `tools/release160/owner_bot0_personsummary_readonly_trial.py`, exact Git blob `57c9827ffe41f345f167fb6294e3b639cd5750b0`. Its unchanged sanitizer `tools/release160/personsummary_console_result.py` has Git blob `5f89aaeb7a765cc235218e55774302937bd6f597`.
+- Direct line-by-line comparison against the previously mock-proven Bot0 runner found **8 localized change hunks (40 diff lines)**: document diagnostic-only purpose, replace the candidate digest, remove 120-second warmup and restore 14-second observation, strengthen candidate image-label checks, update observation text. No other source, recovery, fleet, cleanup or direct PTY dispatch changes were observed in this read-only diff audit.
+- Previous runner's mocked isolation/recovery and redaction CI `41152033299` succeeded, and the revised Java source/full JAR CI `41153065633` plus new image CI `41153311035` succeeded. This does **not** substitute for a new standalone mocked lifecycle CI on the modified Python runner; that remains unexecuted.
+- The user authorized a second Bot0-only test, but original proposed scope was the obsolete 120-second warmup; the NEW candidate explicitly uses one read-only friend-list GET before at most one PersonSummary GET. Before the owner runs the script, disclose this updated GET scope and require the owner to choose to execute the exact pinned script.
+- No test2 has been executed on Dell, and no production action is claimed. If run, enforce exact Git blob identity and digest. Operator must send sanitized result plus recovery output. Stop after `RECOVERY NOT VERIFIED` and do not rerun or remove the hold by hand.
+
 ## Safety and next gate
 - No Dell access, no Bot0 restart, no fleet restart, no Xbox API request, no database access, no friend cleanup, no GHCR test/stable promotion occurred.
 - Source probes never authorize deletion. Friend removal remains intentionally denied. Cleanup remains paused.
