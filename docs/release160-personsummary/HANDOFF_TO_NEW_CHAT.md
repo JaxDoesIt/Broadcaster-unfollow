@@ -16,15 +16,15 @@ This branch was deliberately created so a new assistant can start from **Git wit
 >
 > Treat Git as the source of truth. Audit current relevant branch state and successful CI, maintain the safety gates, and continue only **authorized and incomplete gates** in NEXT_STEPS. The exact-status V4 offline source, immutable image and rollback runner are already fully proven, so do not repeat them. Update the canonical docs as you finish work. Don't mistake historical "waiting for approval" stages for the current status.
 >
-> V4 is now prepared offline: source/JAR CI `41161780744` (5,535 mocked Java assertions), immutable image CI `41162141697` (exact digest `sha256:4b39be565e373b5f6118716a85ec7bea8e4fab4f3bb967adba66e7b204f195ed`), and mock operator CI `41162253916` (25 tests). The owner has now explicitly approved one fourth V4 Bot0-only trial; no fourth-trial output has been received. All source, image and runner hashes are in STATUS_AND_EVIDENCE.
+> The **fourth V4 live trial was completed**. Result: `PERSONSUMMARY_DIAGNOSTIC result=OBSERVED http=unverified fields=list_http_400 can_authorize_removal=false`. The runner reported exact original Bot0 image rollback and hold clearance; I independently confirmed Bot0 is functional after this fourth rollback. The specific HTTP 400 cause is still unknown. Source/JAR CI `41161780744`, image CI `41162141697`, and operator-mock CI `41162253916` were already green. **No fifth trial is approved.**
 >
 > There were **three** owner-approved temporary Bot0-only live trials. Each restored the original immutable Release160 Bot0 image. The third returned `PERSONSUMMARY_DIAGNOSTIC result=OBSERVED http=unverified fields=list_other can_authorize_removal=false`, and I confirmed **Bot0 is functional for players after that third rollback**.
 >
-> Friend cleanup remains intentionally paused at the last observed check. Do not delete/accept/add Xbox friends, unpause cleanup, restart the fleet, change the other 15 bots, or touch the original Compose config. Do not print account IDs, auth tokens or raw response bodies. One fourth live V4 Bot0-only test is now explicitly authorized, but has not yet been reported executed; there is no permission for retries or further tests. An ordinary "proceed" authorizes Git/offline work, not a production interruption.
+> Friend cleanup remained paused in the fourth trial. Do not add/remove friends, unpause cleanup, restart the fleet, change other 15 bots, touch original Compose, or show tokens/IDs/raw responses. **The fourth-trial authorization was consumed**; `proceed` allows offline work only, not a fifth test.
 >
 > I want rigorous mock/offline testing, independent identity/digest verification, adversarial review, clear Git checkpoints, and one copy-paste Dell terminal command only when a specific live action is separately approved. Preserve an exact original-image rollback and stop on any failed recovery.
 >
-> The current task is **Gate G**: V4 can now reveal the precise protocol HTTP status that V3 grouped into `list_other`, and the owner has approved a single fourth Bot0 interruption. If the owner specifically authorizes a fourth trial, independently reverify preflight and use only the exact pinned V4 scripts and image listed in STATUS_AND_EVIDENCE. Otherwise continue public/static analysis and documentation only. Mark exactly what is and is not verified.
+> The current task is offline investigation of the actual **HTTP 400**. Compare the original upstream `FriendManager.get()` request with V4's GET: the original includes `Accept-Language: en-GB`, V4 does not; V4 adds `Accept: application/json` and `Cache-Control: no-store`. Also compare the different Microsoft-documented social endpoint. These are hypotheses only. Update Git docs with grounded findings, source-only tests and no production modifications.
 
 ## Retrieval and continuity rules
 
@@ -37,4 +37,4 @@ This branch was deliberately created so a new assistant can start from **Git wit
 
 ## Why this exists
 
-Previous work uncovered that the pinned Release160 upstream friend-list GET did not establish HTTP status, and the first two trials both returned `no_cached_target`. The third improved V3 probe classified an unexpected HTTP status as `list_other` while restoring Bot0 safely. The next assistant should **solve that narrower blocker**, not rebuild the entire bot fleet or restart friend cleanup.
+Previous work uncovered that the pinned Release160 upstream friend-list GET did not establish HTTP status, and the first two trials both returned `no_cached_target`. The third improved V3 probe classified an unexpected HTTP status as `list_other` while restoring Bot0 safely. That V3 blocker was solved by V4: **HTTP 400 confirmed**. The next assistant should research why, not rebuild the fleet or restart cleanup.
