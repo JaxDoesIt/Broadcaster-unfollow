@@ -39,6 +39,12 @@ Fourth owner-approved V4 test returned **friend-list HTTP 400 Bad Request** on t
 - **Gate H remains pending:** exact HTTP code from a successful future test, endpoint/contract decision and any later PersonSummary evidence. No friendship deletion or cleanup resume.
 - If the owner does not want another interruption, pause at this fully documented offline checkpoint. Continue only static research and mock tests.
 
+## STRATEGY PIVOT: reuse old working count/cleanup, don't rebuild it
+
+The owner challenged the overly narrow PersonSummary/PeopleHub diagnostic emphasis. Source review confirmed this was warranted: **the fourth GET HTTP400 is on a distinct URL from the existing Release160 friend-removal DELETE**, and older count and cleanup application logic remains in private Control Bot source. See [REUSE_FIRST_REPAIR_STRATEGY.md](./REUSE_FIRST_REPAIR_STRATEGY.md) for the prioritized plan and factual evidence.
+
+**Current highest-priority offline gate:** create an exact old Release154 versus Release160 contract matrix covering command input, output, delivery framing, Xbox endpoint, result/receipt semantics, count history, cleanup protection, and adaptation steps. Audit/reuse the existing Release160 `friendcountv2` producer and Control Bot observer before developing any new redundant diagnostic. Do not move immediately to a fifth PeopleHub GET test. Preserve all cleanup, backup, and owner-permission fences.
+
 ## ACTIVE NEXT WORK after fourth trial: explain HTTP 400, offline first
 
 1. **READ-ONLY SOURCE DIFFERENTIAL: COMPLETED.** Pinned original upstream `FriendManager.get()` and V4 have identical GET/URI/Authorization source/contract version 7, but different headers (original `Accept-Language: en-GB`, V4 `Accept: application/json` and `Cache-Control: no-store`). **Additionally, original shared client is Methanol HTTP/1.1, redirects NORMAL, request timeout default 5s. V4 uses separate plain Java HttpClient, redirects NEVER, Java default HTTP/2 preference, request timeout 7s.** This is code-verified only; 400 cause remains unknown. Details in [ENDPOINT_RESEARCH](./ENDPOINT_RESEARCH.md).
