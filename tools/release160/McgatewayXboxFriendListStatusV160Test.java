@@ -100,7 +100,7 @@ public final class McgatewayXboxFriendListStatusV160Test {
 
         var malformedUtf8 = McgatewayXboxFriendListStatusV160.capture(req ->
             response(200, new byte[] {(byte)0xff, (byte)0xfe}), SECRET, SELF);
-        eq("list_unverified", malformedUtf8.reason(),
+        eq("list_invalid", malformedUtf8.reason(),
             "invalid UTF8 fails without exposing data");
         validateNoLeak(malformedUtf8);
 
