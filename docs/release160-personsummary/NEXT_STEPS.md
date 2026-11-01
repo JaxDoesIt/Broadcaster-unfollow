@@ -1,5 +1,14 @@
 # Release 160 PersonSummary | NEXT STEPS AND TASK PATHWAY
 
+## November 1 owner rollback preflight and new candidate build source
+
+Dell owner read-only preflight: all **16/16 bots running**, Bot0 original Release160 immutable image **sha256:1b6e1dad197b82a97546bf352cadb5426eb7537fee9a24eb9160e8b00f5a3e55** available locally (and original historical image present), **0 restarts**, image overlay label `relay-audit-expiry-held-v2`, original source revision `f0da506d12074d5c99666d7a8ef0f73cdb6d6f58`; Control Bot active NRestarts0, Watchtower not running, disk free 231.6 GiB. No Dell modifications. This confirms rollback **availability**, not a guaranteed future state.
+
+On isolated public branch `fix/release160-accounts-list-producer-unavailable-2026-10-31` added fifth file, source commit `e479c24a146227b8999468e50d4a55edb03ab1df`: `.github/workflows/release160-accounts-list-producer-image-candidate.yml`. Workflow builds original exact upstream and production expiry-held overlay with the strict read-only producer patch, tests 146 fake HTTP responses + config proof + full standalone JAR, pins reviewed source blobs, then attempts publishing only distinct GHCR `release-160-accounts-list-producer-<full workflow SHA>`, marks `production-ready=false`, refuses tag overwrite, records immutable pushed digest. It does not target existing stable/bot tags, Dell containers or friends. **Image workflow run outcome and digest not yet verified.**
+
+**NEXT:** verify source SHA `e479c24...` candidate-image GitHub Actions push run and inspect actual job/digest; if red, repair source only. Do not perform a Bot0 recreate, new Xbox GET, Docker pull, or cleanup resume until separate narrowly scoped operator approval and final rollback/candidate identity check. Provisional count must never feed verified V4.4 capacity. Private canonical checklist: `JaxDoesIt/MCGateway:fix/release160-count-display-adapter-2026-10-31/docs/TODO.md`.
+
+
 ## October 31 producer source proof fully green, no live use
 
 GitHub [source-only run 41247445897](https://github.com/JaxDoesIt/Broadcaster-unfollow/actions/runs/41247445897) at exact `ad0f0fe3a652940c8197618c5ee313bed631a3d9` completed **SUCCESS** and was independently inspected via job `124673710425` and decoded logs: pinned original `mcgateway/release-160-compat` source overlay reconstruction/safety PASS, Java compile PASS, **146 fake HTTP/zero/missing-field checks PASS**, config compatibility PASS, standalone classes PASS, BUILD SUCCESSFUL, no image built/pushed and zero live Xbox requests. Previous red `41246603544` (missing config proof class fixture) is superseded.
