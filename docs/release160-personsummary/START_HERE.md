@@ -1,5 +1,12 @@
 # Release 160: Xbox friend-list / PersonSummary diagnostic | START HERE
 
+## 2026-11-01: Bot0-only canary authorized, actual Dell gate remains incomplete
+
+Owner explicitly **authorized Bot0-only reversible trial**, nothing fleet-wide or friend-delete. The next owner-operated **read-only** host preflight showed 16/16 running, original Bot0 image ID `sha256:1b6e1dad197b82a97546bf352cadb5426eb7537fee9a24eb9160e8b00f5a3e55` **MATCH**, original image present, Bot0 restartCount0, Compose project/service `mcgateway/mcgatewaybot-docker`, sole mount destination `/opt/app/config`, Control Bot active NRestarts0, Watchtower stopped, updater **paused** and both updater/staged rollout stages **complete**, 231.5 GiB free. But Bot0 maintenance marker is **NOT ACTIVE**, in-process cleanup/console lease drain **NOT VERIFIED**, and Compose's currently resolved image ref **does not equal** the actual container configured image (often mutable tag vs digest but not yet proven). Therefore **do not recreate Bot0 with bare Compose or direct Docker container synthesis**.
+
+**NEXT safe action:** verify host Compose topology/reference differences without exposing source/env values; stage the already-published GHCR candidate by immutable digest with `docker pull` but do not start/recreate any container. Candidate index digest `sha256:21847ef429de7f5b80e31a6f8c7fa990a9b749a49a444bf68ecd96bec7c7fb39`; expected `linux/amd64` and provisional-only overlay labels. Then activate verified Bot0 maintenance marker, wait for in-process drain evidence, and use owner-authorized one-service override plus original image rollback. The restart/cleanup hold must be confirmed *active in installed Control Bot*, not merely source-present; actual data/credentials may not be overwritten. Keep other15 online, no cleanup resume, no capacity admission based on the Xbox social summary.
+
+
 ## 2026-11-01: VERIFIED SEALED NONPRODUCTION GHCR CANDIDATE, NEXT BOT0 APPROVAL
 
 Independent job/log verification of [GitHub Actions run 41334127982](https://github.com/JaxDoesIt/Broadcaster-unfollow/actions/runs/41334127982) at source commit `e479c24a146227b8999468e50d4a55edb03ab1df`: job `124930223643` all steps green; pinned original upstream/overlay hashes, original expiry/removal holds, 146 strict mocked social-summary HTTP checks, old config compatibility and full standalone JAR build PASS; unique image tag preflight, Docker GHCR push and immutable digest check PASS. This is genuine **published candidate**, not installed production code.
