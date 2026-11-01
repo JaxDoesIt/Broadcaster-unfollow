@@ -1,0 +1,177 @@
+name: Build isolated Release160 accounts-list producer candidate image
+
+on:
+  push:
+    branches:
+      - fix/release160-accounts-list-producer-unavailable-2026-10-31
+    paths:
+      - '.github/workflows/release160-accounts-list-producer-image-candidate.yml'
+      - 'tools/release160/apply_accounts_list_producer_v160.py'
+      - 'tools/release160/McgatewaySocialCountV160.java'
+      - 'tools/release160/McgatewaySocialCountV160Test.java'
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: release160-accounts-list-producer-candidate-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-sealed-nonproduction-image:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      UPSTREAM_SHA: 798d8b3a6107359643b525f1c9c3303c020ae09b
+      IMAGE: ghcr.io/jaxdoesit/mcgateway-broadcast:release-160-accounts-list-producer-${{ github.sha }}
+    steps:
+      - name: Checkout exact upstream Release160
+        uses: actions/checkout@v4
+        with:
+          repository: MCXboxBroadcast/Broadcaster
+          ref: 798d8b3a6107359643b525f1c9c3303c020ae09b
+          path: upstream
+          persist-credentials: false
+      - name: Checkout reviewed overlay branch
+        uses: actions/checkout@v4
+        with:
+          path: overlay
+          persist-credentials: false
+      - name: Java21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/wrapper-validation@v4
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Verify all exact base and repair source identities
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C upstream rev-parse HEAD)" = "$UPSTREAM_SHA"
+          test "$(git -C upstream hash-object bootstrap/standalone/Dockerfile)" = "7c698ab4d334ff9bc20fbfe1a5ffca4c94e430c1"
+          test "$(git -C overlay hash-object tools/apply_mcgateway_release160_patch.py)" = "f4114376354b18e3b7541aa4af8bc6103b3b3b53"
+          test "$(git -C overlay hash-object tools/test_release160_patch.py)" = "b5cfd61bd0e21434504eeb4a67f86e2a7e13a280"
+          test "$(git -C overlay hash-object tools/release160/config-proof.gradle.kts)" = "b76d20e5603ad1eb212fd913ce17e861862c3853"
+          test "$(git -C overlay hash-object tools/release160/ConfigCompatibilityProof.java)" = "f5a032b4850c1a36fc314441dcbe6c0115256ad1"
+          test "$(git -C overlay hash-object tools/release160/McgatewaySocialCountV160.java)" = "907ee90342e5b59416de999e825668e6d2f62ef2"
+          test "$(git -C overlay hash-object tools/release160/McgatewaySocialCountV160Test.java)" = "e0814e3a65ef01886377ed84ee5a9c773b554670"
+          test "$(git -C overlay hash-object tools/release160/apply_accounts_list_producer_v160.py)" = "cf6fbfd5bd8ae613ca7051ec5f4d7cc063fecd9f"
+          ! grep -Fq 'MCGATEWAY_XBOX_PRESENCE_POST_ACCEPTED' overlay/tools/apply_mcgateway_release160_patch.py
+          echo "Pinned upstream and reviewed repair source identities PASS."
+
+      - name: Apply original production overlay plus only the verified count producer repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -B overlay/tools/test_release160_patch.py upstream
+          python3 -B overlay/tools/apply_mcgateway_release160_patch.py upstream
+          python3 -B overlay/tools/release160/apply_accounts_list_producer_v160.py upstream \
+            overlay/tools/release160/McgatewaySocialCountV160.java
+          test "$(python3 -B overlay/tools/release160/apply_accounts_list_producer_v160.py upstream \
+            overlay/tools/release160/McgatewaySocialCountV160.java)" = "UNCHANGED"
+
+          mkdir -p upstream/core/src/mcgatewayProof/java/com/rtm516/mcxboxbroadcast/core/configs
+          cp overlay/tools/release160/McgatewaySocialCountV160Test.java \
+            upstream/core/src/mcgatewayProof/java/com/rtm516/mcxboxbroadcast/core/
+          cp overlay/tools/release160/ConfigCompatibilityProof.java \
+            upstream/core/src/mcgatewayProof/java/com/rtm516/mcxboxbroadcast/core/configs/
+          cat overlay/tools/release160/config-proof.gradle.kts >> upstream/core/build.gradle.kts
+          cat >> upstream/core/build.gradle.kts <<'EOF'
+          tasks.register<JavaExec>("mcgatewaySocialCountV160Proof") {
+              dependsOn(mcgatewayProof.classesTaskName)
+              classpath = mcgatewayProof.runtimeClasspath
+              mainClass.set("com.rtm516.mcxboxbroadcast.core.McgatewaySocialCountV160Test")
+              maxHeapSize = "128m"
+          }
+          EOF
+          git -C upstream diff --check
+          grep -Fq 'MCGATEWAY_RELEASE160_EXPIRY_HOLD' upstream/core/src/main/java/com/rtm516/mcxboxbroadcast/core/SessionManager.java
+          ! grep -Fq 'scheduleWithFixedDelay(this::expireFriends' upstream/core/src/main/java/com/rtm516/mcxboxbroadcast/core/SessionManager.java
+          grep -Fq 'friends remove is DENIED' upstream/bootstrap/standalone/src/main/java/com/rtm516/mcxboxbroadcast/bootstrap/standalone/StandaloneLoggerImpl.java
+          grep -Fq 'MCGATEWAY_ACCOUNTS_LIST_V160 result=' upstream/core/src/main/java/com/rtm516/mcxboxbroadcast/core/SessionManager.java
+          ! grep -Fq 'friendcountv2' upstream/bootstrap/standalone/src/main/java/com/rtm516/mcxboxbroadcast/bootstrap/standalone/StandaloneLoggerImpl.java
+          echo "Original expiry/removal hold and Release160 producer-only patch verified."
+
+      - name: Run mocked count, config, and full standalone build
+        shell: bash
+        working-directory: upstream
+        run: |
+          set -euo pipefail
+          ./gradlew --no-daemon --max-workers=2 -Dorg.gradle.jvmargs=-Xmx2g \
+            :core:mcgatewaySocialCountV160Proof \
+            :core:mcgatewayConfigCompatibility \
+            :bootstrap-standalone:build
+          JAR="bootstrap/standalone/build/libs/MCXboxBroadcastStandalone.jar"
+          test -s "$JAR"
+          jar tf "$JAR" > "${{ runner.temp }}/mcgateway-producer-jar.txt"
+          grep -Fqx "com/rtm516/mcxboxbroadcast/core/McgatewaySocialCountV160.class" \
+            "${{ runner.temp }}/mcgateway-producer-jar.txt"
+          grep -Fqx "com/rtm516/mcxboxbroadcast/bootstrap/standalone/StandaloneLoggerImpl.class" \
+            "${{ runner.temp }}/mcgateway-producer-jar.txt"
+          sha256sum "$JAR"
+          echo "Standalone JAR and embedded repaired class verified."
+
+      - name: Set up isolated Docker builder
+        uses: docker/setup-buildx-action@v4
+      - name: Login to GHCR for uniquely tagged nonproduction candidate
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Refuse candidate tag overwrite
+        shell: bash
+        run: |
+          set -euo pipefail
+          if docker buildx imagetools inspect "$IMAGE" >"${{ runner.temp }}/candidate-lookup.out" 2>"${{ runner.temp }}/candidate-lookup.err"; then
+            echo "REFUSED: unique candidate image already exists. Never overwrite reviewed digest."
+            exit 1
+          else
+            if ! grep -Eiq 'manifest unknown|manifest not found|not found|404' "${{ runner.temp }}/candidate-lookup.err"; then
+              echo "REFUSED: cannot prove candidate tag unused (registry/auth unknown)."
+              exit 1
+            fi
+          fi
+
+      - name: Build and push isolated candidate only
+        id: build
+        uses: docker/build-push-action@v7
+        with:
+          context: upstream
+          file: upstream/bootstrap/standalone/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: ${{ env.IMAGE }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/JaxDoesIt/Broadcaster-unfollow
+            org.opencontainers.image.revision=${{ github.sha }}
+            io.mcgateway.upstream-release=160
+            io.mcgateway.upstream-sha=798d8b3a6107359643b525f1c9c3303c020ae09b
+            io.mcgateway.overlay-variant=relay-audit-expiry-held-v2-accounts-list-producer-v1
+            io.mcgateway.production-ready=false
+            io.mcgateway.target-minecraft=26.60
+            io.mcgateway.count-evidence=provisional-only
+      - name: Verify immutable pushed candidate digest, never promote stable tags
+        shell: bash
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          set -euo pipefail
+          test -n "$DIGEST"
+          [[ "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]
+          docker buildx imagetools inspect "$IMAGE" >"${{ runner.temp }}/candidate-inspect.txt"
+          grep -Fq "$DIGEST" "${{ runner.temp }}/candidate-inspect.txt"
+          {
+            echo "## Release160 isolated accounts-list producer candidate"
+            echo ""
+            echo "- Candidate tag: $IMAGE"
+            echo "- Immutable candidate digest: $DIGEST"
+            echo "- Pinned upstream: $UPSTREAM_SHA"
+            echo "- Original production overlay preserved; new count producer remains provisional-only"
+            echo "- No stable/test/bot image changed or deployed; no live Xbox requests or friend removal"
+            echo "- Next gate: inspect digest and separately authorize Bot0-only rollback-controlled test"
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "NONPRODUCTION CANDIDATE: $IMAGE @ $DIGEST"
