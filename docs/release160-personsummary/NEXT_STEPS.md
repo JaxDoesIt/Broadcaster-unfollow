@@ -1,5 +1,20 @@
 # Release 160 PersonSummary | NEXT STEPS AND TASK PATHWAY
 
+## 2026-11-01: VERIFIED SEALED NONPRODUCTION GHCR CANDIDATE, NEXT BOT0 APPROVAL
+
+Independent job/log verification of [GitHub Actions run 41334127982](https://github.com/JaxDoesIt/Broadcaster-unfollow/actions/runs/41334127982) at source commit `e479c24a146227b8999468e50d4a55edb03ab1df`: job `124930223643` all steps green; pinned original upstream/overlay hashes, original expiry/removal holds, 146 strict mocked social-summary HTTP checks, old config compatibility and full standalone JAR build PASS; unique image tag preflight, Docker GHCR push and immutable digest check PASS. This is genuine **published candidate**, not installed production code.
+
+**Registry tag:** `ghcr.io/jaxdoesit/mcgateway-broadcast:release-160-accounts-list-producer-e479c24a146227b8999468e50d4a55edb03ab1df`
+
+**Verified OCI index digest:** `sha256:21847ef429de7f5b80e31a6f8c7fa990a9b749a49a444bf68ecd96bec7c7fb39`
+
+**Digest-pinned candidate reference:** `ghcr.io/jaxdoesit/mcgateway-broadcast@sha256:21847ef429de7f5b80e31a6f8c7fa990a9b749a49a444bf68ecd96bec7c7fb39`
+
+OCI index digest must not be confused with original Bot0 local `sha256:1b6e1dad197b82a97546bf352cadb5426eb7537fee9a24eb9160e8b00f5a3e55` image ID. Candidate only changed the async account-list count response producer; source labels include `production-ready=false`, `count-evidence=provisional-only`, `overlay-variant=relay-audit-expiry-held-v2-accounts-list-producer-v1`.
+
+Latest owner **read-only** host preflight before candidate build: 16/16 bots running, original Bot0 image available for rollback, Bot0 restarts0, Control Bot active, Watchtower stopped, disk 231.6 GiB free. This was historical at that check, not fresh after image push. **NEXT** reconfirm current status and approve exact one-bot rollback-controlled canary separately. A Bot0 recreate briefly interrupts that bot and must not change other 15, DB, updater/Watchtower, authoritative capacity, or cleanup. No new Xbox social API probe needed: existing paced `accounts list` checks can observe the producer after installation. Candidate may return `unavailable`, never false zero; real Xbox API semantics still unknown. Friend DELETE producer remains separately paused and unverified.
+
+
 ## November 1 owner rollback preflight and new candidate build source
 
 Dell owner read-only preflight: all **16/16 bots running**, Bot0 original Release160 immutable image **sha256:1b6e1dad197b82a97546bf352cadb5426eb7537fee9a24eb9160e8b00f5a3e55** available locally (and original historical image present), **0 restarts**, image overlay label `relay-audit-expiry-held-v2`, original source revision `f0da506d12074d5c99666d7a8ef0f73cdb6d6f58`; Control Bot active NRestarts0, Watchtower not running, disk free 231.6 GiB. No Dell modifications. This confirms rollback **availability**, not a guaranteed future state.
