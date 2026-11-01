@@ -1,5 +1,12 @@
 # Release 160: Xbox friend-list / PersonSummary diagnostic | START HERE
 
+## October 31 producer source proof fully green, no live use
+
+GitHub [source-only run 41247445897](https://github.com/JaxDoesIt/Broadcaster-unfollow/actions/runs/41247445897) at exact `ad0f0fe3a652940c8197618c5ee313bed631a3d9` completed **SUCCESS** and was independently inspected via job `124673710425` and decoded logs: pinned original `mcgateway/release-160-compat` source overlay reconstruction/safety PASS, Java compile PASS, **146 fake HTTP/zero/missing-field checks PASS**, config compatibility PASS, standalone classes PASS, BUILD SUCCESSFUL, no image built/pushed and zero live Xbox requests. Previous red `41246603544` (missing config proof class fixture) is superseded.
+
+**Current actionable next step:** read-only current Dell Bot0 image/container identity and preserved immutable rollback image preflight; confirm Control Bot running, watchtower status and source-variant labels before considering a candidate build. The new patch's social summary count remains **non-authoritative**, actual Xbox endpoint and social schema remain unknown, and it has never been installed. Source path `fix/release160-accounts-list-producer-unavailable-2026-10-31`, from exact original production overlay, only 4 added source/CI files. Any one-bot install, Docker recreate, updater/watchtower change, Xbox diagnostic command, or cleanup unpause still requires separately scoped owner authorization. Do not call this a live repair yet.
+
+
 ## Latest October 31 producer build failure and workflow correction
 
 The producer source-only Actions run `41246603544` at `562228cb42cd72e754d94791cbf8f7b375319a0c` **failed**, but its pinned original-overlay preflight passed; patched Java `:core:compileJava` passed; the new fake social summary test reported **146 checks passed**. Failure occurred in the *preexisting config compatibility task* `:core:mcgatewayConfigCompatibility` with `ClassNotFoundException: ...ConfigCompatibilityProof`: the CI workflow forgot to copy that original proof file. The task stopped before standalone compilation could be verified.
