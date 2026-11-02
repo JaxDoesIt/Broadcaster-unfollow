@@ -79,7 +79,7 @@ public final class McgatewayFriendCountProof {
             if(!(next instanceof Exception e) || next==reason) break;
             reason=e;
         }
-        String message=reason.getMessage();
+        String message=reason.getMessage()==null?"":reason.getMessage();
         if(reason instanceof InterruptedException) return "interrupted";
         if(reason instanceof java.net.http.HttpTimeoutException || reason instanceof TimeoutException
            || "capture timeout".equals(message) || "request timeout".equals(message)) return "timeout";
