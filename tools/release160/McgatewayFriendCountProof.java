@@ -53,7 +53,68 @@ public final class McgatewayFriendCountProof {
     }
     static String capture(Fetcher fetcher,String auth,String nonce) throws Exception { return capture(fetcher,auth,nonce,BUDGET,System::nanoTime); }
     static String capture(Fetcher fetcher,String auth,String nonce,Duration budget) throws Exception { return capture(fetcher,auth,nonce,budget,System::nanoTime); }
-    static String capture(Fetcher fetcher,String auth,String nonce,Duration budget,LongSupplier clock) throws Exception { if(fetcher==null||auth==null||auth.isBlank()||nonce==null||!NONCE.matcher(nonce).matches()||budget==null||budget.isNegative()||budget.isZero()||clock==null) throw new IllegalArgumentException("invalid proof input"); long deadline=clock.getAsLong()+budget.toNanos(); int before=summary(fetch(fetcher,SUMMARY,"3",auth,deadline,clock),deadline,clock), count=friends(fetch(fetcher,FRIENDS,"7",auth,deadline,clock),deadline,clock), after=summary(fetch(fetcher,SUMMARY,"3",auth,deadline,clock),deadline,clock); if(before!=after||before!=count) throw new IllegalStateException("inconsistent friend snapshot"); checkDeadline(deadline,clock); return "MCGATEWAY_FRIEND_COUNT_V160_V2 nonce="+nonce+" count="+count+" before="+before+" after="+after+" complete=true pages=1"; }
+    // Operator-safe diagnostic. The only permitted output values are fixed
+    // stage/category tokens, never Exception.getMessage(), HTTP body, XUID,
+    // authorization header, username or service URL.
+    private static final class StageFailure extends Exception {
+        final String stage, category;
+        StageFailure(String stage, String category) {
+            super("unavailable"); this.stage=stage; this.category=category;
+        }
+    }
+    public static String safeFailureFields(Exception error) {
+        if(error instanceof StageFailure failure)
+            return " stage="+failure.stage+" category="+failure.category;
+        return " stage=other category=unclassified";
+    }
+    private static String failureCategory(Exception error) {
+        String message=error.getMessage();
+        if(error instanceof InterruptedException) return "interrupted";
+        if(error instanceof java.net.http.HttpTimeoutException || error instanceof TimeoutException
+           || "capture timeout".equals(message) || "request timeout".equals(message)) return "timeout";
+        if("HTTP failure".equals(message)) return "http-rejected";
+        if(Set.of("pagination header","pagination body","unverified collection window metadata").contains(message))
+            return "pagination-unproven";
+        if("invalid targetFriendCount".equals(message)) return "invalid-summary";
+        if(Set.of("invalid people snapshot","invalid friend row").contains(message)) return "invalid-friends";
+        if(Set.of("invalid JSON","invalid JSON token","trailing JSON","duplicate JSON key").contains(message))
+            return "invalid-json";
+        if(Set.of("oversize body","JSON limit","JSON row limit").contains(message))
+            return "response-limits";
+        if("missing JSON content type".equals(message)) return "invalid-content-type";
+        return "unclassified";
+    }
+    private static int safeSummary(Fetcher fetcher, String auth, long deadline,
+                                   LongSupplier clock, String stage) throws Exception {
+        try {
+            return summary(fetch(fetcher,SUMMARY,"3",auth,deadline,clock),deadline,clock);
+        } catch(Exception error) {
+            if(error instanceof InterruptedException) Thread.currentThread().interrupt();
+            throw new StageFailure(stage,failureCategory(error));
+        }
+    }
+    private static int safeFriends(Fetcher fetcher, String auth, long deadline,
+                                   LongSupplier clock) throws Exception {
+        try {
+            return friends(fetch(fetcher,FRIENDS,"7",auth,deadline,clock),deadline,clock);
+        } catch(Exception error) {
+            if(error instanceof InterruptedException) Thread.currentThread().interrupt();
+            throw new StageFailure("friends",failureCategory(error));
+        }
+    }
+    static String capture(Fetcher fetcher,String auth,String nonce,Duration budget,LongSupplier clock) throws Exception {
+        if(fetcher==null||auth==null||auth.isBlank()||nonce==null||!NONCE.matcher(nonce).matches()
+            ||budget==null||budget.isNegative()||budget.isZero()||clock==null)
+            throw new IllegalArgumentException("invalid proof input");
+        long deadline=clock.getAsLong()+budget.toNanos();
+        int before=safeSummary(fetcher,auth,deadline,clock,"summary-before");
+        int count=safeFriends(fetcher,auth,deadline,clock);
+        int after=safeSummary(fetcher,auth,deadline,clock,"summary-after");
+        if(before!=after||before!=count) throw new StageFailure("crosscheck","count-mismatch");
+        try { checkDeadline(deadline,clock); }
+        catch(Exception error) { throw new StageFailure("crosscheck",failureCategory(error)); }
+        return "MCGATEWAY_FRIEND_COUNT_V160_V2 nonce="+nonce+" count="+count+" before="+before+" after="+after+" complete=true pages=1";
+    }
     private static Response fetch(Fetcher f,URI uri,String contract,String auth,long deadline,LongSupplier clock) throws Exception { long remaining=deadline-clock.getAsLong(); if(remaining<=0) throw new IllegalStateException("capture timeout"); Response r=f.fetch(new Request(uri,contract,auth,Duration.ofNanos(remaining))); if(r==null||r.statusCode()!=200) throw new IllegalStateException("HTTP failure"); checkDeadline(deadline,clock); if(r.body()==null||r.body().getBytes(StandardCharsets.UTF_8).length>MAX_BODY) throw new IllegalStateException("oversize body"); boolean json=false; for(var h:r.headers().entrySet()){String n=normalize(h.getKey()); if(n.equals("contenttype"))for(String v:h.getValue())json|=v.matches("(?i)\\s*application/json(?:\\s*;\\s*charset=[a-z0-9._-]+)?\\s*"); if(n.equals("link")||Set.of("continuation","continuationtoken","next","nextlink","nextpage","nextpagelink","nextpagetoken","paging","paginginfo","pagination","hasmore","skiptoken","odatanextlink","totalpages").contains(n))throw new IllegalStateException("pagination header");} if(!json)throw new IllegalStateException("missing JSON content type"); return r; }
     private static int summary(Response r,long deadline,LongSupplier clock){Map<String,Object> root=object(parse(r.body(),deadline,clock),"summary object"); rejectContinuation(root,deadline,clock); Object v=root.get("targetFriendCount"); if(!(v instanceof NumberLiteral n)||!COUNT.matcher(n.text()).matches())throw new IllegalStateException("invalid targetFriendCount"); int count=Integer.parseInt(n.text()); root.clear(); checkDeadline(deadline,clock); return count;}
     private static int friends(Response r,long deadline,LongSupplier clock){Map<String,Object> root=object(parse(r.body(),deadline,clock),"friends object"); rejectContinuation(root,deadline,clock); rejectCollectionWindow(root,deadline,clock); Object raw=root.get("people"); if(!(raw instanceof List<?> people)||people.size()>MAX_ROWS)throw new IllegalStateException("invalid people snapshot"); Set<String> seen=new HashSet<>();int count=0;for(Object row:people){if((count&127)==0)checkDeadline(deadline,clock);Map<String,Object> p=object(row,"person");Object x=p.get("xuid"),fr=p.get("isFriend");if(!(x instanceof String id)||!validXuid(id)||!seen.add(id)||!(fr instanceof Boolean))throw new IllegalStateException("invalid friend row");if((Boolean)fr)count++;p.clear();}root.clear();checkDeadline(deadline,clock);return count;}
