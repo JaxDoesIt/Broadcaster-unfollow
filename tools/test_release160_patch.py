@@ -29,7 +29,7 @@ def main():
         check('case "friendcountv2"' in logger and 'nonce=invalid ERROR unavailable' in logger,'nonce-bound proof console missing')
         helper=root/'core/src/main/java/com/rtm516/mcxboxbroadcast/core/McgatewayFriendCountProof.java'
         check(helper.read_bytes()==PATCH.with_name('release160').joinpath('McgatewayFriendCountProof.java').read_bytes(),'count helper source mismatch')
-        check('mcgatewayFriendCountProof' in friend and 'HttpClient.Redirect.NEVER' in friend,'dedicated redirect-free count client missing')
+        check('mcgatewayFriendCountProof' in friend and 'HttpClient.Redirect.NEVER' in friend and 'HttpClient.Version.HTTP_1_1' in friend,'dedicated pinned HTTP1.1 redirect-free count client missing')
         check('MCGATEWAY_FRIEND_COUNT_V160 count=' in logger and 'MCGATEWAY_FRIEND_COUNT_V160 ERROR unavailable' in logger,'structured friendcount console missing')
         manager=(root/'core/src/main/java/com/rtm516/mcxboxbroadcast/core/SessionManager.java').read_text()
         check('MCGATEWAY_RELEASE160_EXPIRY_HOLD' in manager,'upstream expiry hold missing')
