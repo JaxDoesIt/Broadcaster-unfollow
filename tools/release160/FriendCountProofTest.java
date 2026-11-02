@@ -117,7 +117,9 @@ public final class FriendCountProofTest {
         for(var fixture : cases) {
             String report=failureFields(request -> {
                 if(request.uri().equals(McgatewayFriendCountProof.FRIENDS)) throw fixture.thrown();
-                return resp("{\"targetFriendCount\":1}");
+                return new McgatewayFriendCountProof.Response(200,
+                    Map.of("Content-Type",List.of("application/json")),
+                    "{\"targetFriendCount\":1}");
             });
             if(!report.equals(" stage=friends-fetch category="+fixture.expected()))
                 throw new AssertionError("typed fixture mismatch: expected="+fixture.expected()
