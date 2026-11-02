@@ -16,11 +16,11 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 12
     env:
-      IMAGE: ghcr.io/jaxdoesit/mcgateway-broadcast@sha256:c9d076a4144bac1ab542a436aac19d5027763107adc59bcf2336233fe75429c6
-      PINNED_INDEX: sha256:c9d076a4144bac1ab542a436aac19d5027763107adc59bcf2336233fe75429c6
-      PINNED_MANIFEST: sha256:782de64eca45ff60f16941c52e066bb40e8c44f9095975ac1ddb55b9949e5b0c
-      PINNED_CONFIG: sha256:9d4bce3c4bc59d73b7d91df1b3e0b9b9dd108d21bf6f441b9ab21f2c8f402d2b
-      PRODUCER_SHA: 2a5d097c124f151ba23303f72cc60d96fc89b3cb
+      IMAGE: ghcr.io/jaxdoesit/mcgateway-broadcast@sha256:69cc996e0f1693bbac8c99fc23c2455893c27f3bd1a3502a597cef1f7c953bdd
+      PINNED_INDEX: sha256:69cc996e0f1693bbac8c99fc23c2455893c27f3bd1a3502a597cef1f7c953bdd
+      PINNED_MANIFEST: sha256:54f16a4a09ee4485149f3da1105e241b21e3cff3cfb0b8f7dd0770bf2932889f
+      PINNED_CONFIG: sha256:ebc5330e5202deb690e335a04954097a5d44619511bd7b3d5fc1bc2761dfdc22
+      PRODUCER_SHA: 15bfd04409c009648382891ac43476e9687d9faa
     steps:
       - uses: docker/setup-buildx-action@v4
       - uses: docker/login-action@v4
@@ -79,6 +79,7 @@ jobs:
             'io.mcgateway.target-minecraft':'26.60'
           }
           assert all(labels.get(k)==v for k,v in expected.items())
+          assert labels.get('io.mcgateway.production-ready')=='false'
           print('Published linux/amd64 config ID, digest and nonproduction labels: VERIFIED')
           receipt={
             'format':'mcgateway-release160-producer-image-attestation-v1',
