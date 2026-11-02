@@ -40,6 +40,8 @@ def main():
         check('mcgatewayFriendCountProof' in friend and 'HttpClient.Redirect.NEVER' in friend and 'HttpClient.Version.HTTP_1_1' in friend,'dedicated pinned HTTP1.1 redirect-free count client missing')
         check('MCGATEWAY_FRIEND_COUNT_V160 count=' in logger and 'MCGATEWAY_FRIEND_COUNT_V160 ERROR unavailable' in logger,'structured friendcount console missing')
         manager=(root/'core/src/main/java/com/rtm516/mcxboxbroadcast/core/SessionManager.java').read_text()
+        check(manager.count('MCGATEWAY_ACCOUNTS_LIST_V160 result=provisional reason=ok') == 1,
+              'Release160 accounts list display-only completion missing or duplicated')
         check('MCGATEWAY_RELEASE160_EXPIRY_HOLD' in manager,'upstream expiry hold missing')
         check('scheduledThreadPool.scheduleWithFixedDelay(this::expireFriends' not in manager,'upstream expiry still scheduled')
         check('private void expireFriends()' in manager,'unexpected SessionManager expiry implementation removed')
@@ -49,6 +51,18 @@ def main():
         root=Path(temp)/'source';clone(upstream,root);target=root/FILES[0];target.write_text(target.read_text()+'\n// MCGATEWAY_RELEASE160_READONLY_OVERLAY\n');before=digest(root)
         failed=run('python3',str(PATCH),str(root));check(failed.returncode!=0 and 'hash mismatch' in failed.stderr,'injected marker bypassed hash guard')
         after=digest(root);check(after==before,'bad preflight wrote a file');check(not (root/'core/src/main/java/com/rtm516/mcxboxbroadcast/core/McgatewayFriendCountProof.java').exists(),'bad preflight introduced helper')
+    with tempfile.TemporaryDirectory(prefix='mcgateway160-summary-partial.') as temp:
+        root=Path(temp)/'source';clone(upstream,root)
+        check(run('python3',str(PATCH),str(root)).returncode==0,'summary patch apply failed')
+        manager=root/FILES[0]
+        marker='            coreLogger.info("MCGATEWAY_ACCOUNTS_LIST_V160 result=provisional reason=ok");'
+        check(marker in manager.read_text(),'expected summary marker missing')
+        manager.write_text(manager.read_text().replace(marker,'            // unexpected partial summary change'))
+        before=digest(root)
+        failed=run('python3',str(PATCH),str(root))
+        check(failed.returncode!=0 and 'hash mismatch' in failed.stderr,
+              'partially modified summary was accepted')
+        check(digest(root)==before,'partial source modified after failed preflight')
     with tempfile.TemporaryDirectory(prefix='mcgateway160-tampered.') as temp:
         root=Path(temp)/'source';clone(upstream,root);check(run('python3',str(PATCH),str(root)).returncode==0,'initial apply failed');target=root/FILES[2];target.write_text(target.read_text()+'\n// tampered\n');before=digest(root)
         failed=run('python3',str(PATCH),str(root));check(failed.returncode!=0 and 'hash mismatch' in failed.stderr,'tampered patched bytes accepted');check(digest(root)==before,'tampered preflight wrote a file')
