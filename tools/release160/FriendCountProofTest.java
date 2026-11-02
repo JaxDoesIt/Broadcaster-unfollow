@@ -2,6 +2,7 @@ package com.rtm516.mcxboxbroadcast.core;
 
 import java.time.Duration;
 import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
 import java.util.function.LongSupplier;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
@@ -49,6 +50,7 @@ public final class FriendCountProofTest {
         expectFailure(() -> McgatewayFriendCountProof.capture(request -> { Thread.sleep(3); return new McgatewayFriendCountProof.Response(200, Map.of(), request.uri().equals(McgatewayFriendCountProof.FRIENDS) ? "{\"people\":[]}" : "{\"targetFriendCount\":0}"); }, "Bearer hidden", NONCE, Duration.ofMillis(1)));
         boundedSubscriberCancels();
         redirectClientRejected();
+        upstreamRequestParity();
         finalSummaryDeadlineRejected();
         abaAccepted();
         expectFailure(() -> McgatewayFriendCountProof.capture(new Stub(resp("{\"targetFriendCount\":1}"), resp("{\"people\":[{\"xuid\":\"7\",\"isFriend\":true}]}"), resp("{\"targetFriendCount\":2}")), "Bearer hidden", NONCE));
@@ -90,6 +92,67 @@ public final class FriendCountProofTest {
         Subscription oversizedSubscription = new Subscription(); oversized.onSubscribe(oversizedSubscription); oversized.onNext(List.of(ByteBuffer.allocate(8 * 1024 * 1024 + 1))); check(oversizedSubscription.cancelled); expectFailure(() -> oversized.getBody().toCompletableFuture().get());
         McgatewayFriendCountProof.BoundedSubscriber expired = new McgatewayFriendCountProof.BoundedSubscriber(System.nanoTime() - 1);
         Subscription expiredSubscription = new Subscription(); expired.onSubscribe(expiredSubscription); expired.onNext(List.of(ByteBuffer.allocate(1))); check(expiredSubscription.cancelled); expectFailure(() -> expired.getBody().toCompletableFuture().get());
+    }
+    private static void upstreamRequestParity() throws Exception {
+        // Pure request-construction assertions. No HTTP send, token lookup,
+        // Docker, Xbox, or friend mutation occurs in this test.
+        var summary = McgatewayFriendCountProof.buildUpstreamCompatibleRequest(
+            new McgatewayFriendCountProof.Request(
+                McgatewayFriendCountProof.SUMMARY, "3", "XBL3.0 fake-test-only",
+                Duration.ofSeconds(8)));
+        var friends = McgatewayFriendCountProof.buildUpstreamCompatibleRequest(
+            new McgatewayFriendCountProof.Request(
+                McgatewayFriendCountProof.FRIENDS, "7", "XBL3.0 fake-test-only",
+                Duration.ofSeconds(8)));
+        check("GET".equals(summary.method()) && "GET".equals(friends.method()));
+        check(summary.uri().equals(McgatewayFriendCountProof.SUMMARY));
+        check(friends.uri().equals(McgatewayFriendCountProof.FRIENDS));
+        check("3".equals(summary.headers().firstValue("x-xbl-contract-version").orElse("")));
+        check("7".equals(friends.headers().firstValue("x-xbl-contract-version").orElse("")));
+        check("en-GB".equals(friends.headers().firstValue("accept-language").orElse("")));
+        check(summary.headers().firstValue("accept-language").isEmpty());
+        check(summary.headers().firstValue("Authorization").orElse("").equals("XBL3.0 fake-test-only"));
+        check(friends.headers().firstValue("Authorization").orElse("").equals("XBL3.0 fake-test-only"));
+        check(summary.headers().map().size() == 2 && friends.headers().map().size() == 3);
+        for (HttpRequest request : List.of(summary, friends)) {
+            check(request.headers().firstValue("Accept").isEmpty());
+            check(request.headers().firstValue("Cache-Control").isEmpty());
+            check(request.timeout().isPresent()
+                && request.timeout().get().equals(Duration.ofSeconds(8)));
+            check(request.bodyPublisher().isEmpty());
+        }
+        expectFailure(() -> McgatewayFriendCountProof.buildUpstreamCompatibleRequest(
+            new McgatewayFriendCountProof.Request(
+                java.net.URI.create("https://example.invalid/people"),
+                "7", "XBL3.0 fake-test-only", Duration.ofSeconds(8))));
+        expectFailure(() -> McgatewayFriendCountProof.buildUpstreamCompatibleRequest(
+            new McgatewayFriendCountProof.Request(
+                McgatewayFriendCountProof.FRIENDS,
+                "3", "XBL3.0 fake-test-only", Duration.ofSeconds(8))));
+        expectFailure(() -> McgatewayFriendCountProof.buildUpstreamCompatibleRequest(
+            new McgatewayFriendCountProof.Request(
+                McgatewayFriendCountProof.SUMMARY,
+                "7", "XBL3.0 fake-test-only", Duration.ofSeconds(8))));
+        try (HttpClient http2 = HttpClient.newBuilder()
+                .version(HttpClient.Version.HTTP_2)
+                .followRedirects(HttpClient.Redirect.NEVER).build()) {
+            expectFailure(() -> McgatewayFriendCountProof.capture(
+                http2, "XBL3.0 fake-test-only", NONCE));
+        }
+        try (HttpClient redirecting = HttpClient.newBuilder()
+                .version(HttpClient.Version.HTTP_1_1)
+                .followRedirects(HttpClient.Redirect.NORMAL).build()) {
+            expectFailure(() -> McgatewayFriendCountProof.capture(
+                redirecting, "XBL3.0 fake-test-only", NONCE));
+        }
+        // A correctly configured transport with invalid token input must
+        // fail before requesting anything, including a DNS lookup.
+        try (HttpClient correct = HttpClient.newBuilder()
+                .version(HttpClient.Version.HTTP_1_1)
+                .followRedirects(HttpClient.Redirect.NEVER).build()) {
+            expectFailure(() -> McgatewayFriendCountProof.capture(
+                correct, "", NONCE));
+        }
     }
     private static void redirectClientRejected() {
         try (HttpClient client = HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NORMAL).build()) {
