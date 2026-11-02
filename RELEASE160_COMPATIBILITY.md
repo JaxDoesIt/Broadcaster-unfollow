@@ -1,5 +1,28 @@
 # Release160 compatibility candidate
 
+## November 1 source-only accurate-count HTTP/1.1 parity candidate and immutable image
+
+**Current development branch:** `fix/release160-friendcount-request-parity-2026-11-01`, started from existing `fix/release160-friendcount-pagination-proof-2026-10-31`. Neither this branch nor its image has been deployed to the Dell.
+
+**What was corrected:** The uninstalled V3 `McgatewayFriendCountProof` now constructs its PeopleHub friend-list request with contract7, the original upstream `accept-language: en-GB`, and no extra explicit Accept/Cache-Control headers. Its social summary request retains contract3 and no language header. The dedicated count diagnostic client's preferred HTTP protocol is now `HTTP_1_1`; redirects remain deliberately disabled (unlike the original general client's Redirect.NORMAL) to avoid silently issuing a second request. This corrects source request-shape differences observed in the prior V4 HTTP400 diagnostic, **not a proven diagnosis of the 400**.
+
+**Proof:** Existing V3 consistent summary/list/summary count and strict incomplete/partial/invalid schema rejection retained; additional offline Java request-envelope tests and source-patch preflights added. Source-only [GitHub Actions 41371494696](https://github.com/JaxDoesIt/Broadcaster-unfollow/actions/runs/41371494696), exact commit `13ae4c13451e2d9ae1100bc1b60edb966fc13936`: **SUCCESS**, pinned original Release160 Java21 standalone compilation, count fixtures, config/expiry and friend-removal denial proof.
+
+**Unique sealed candidate:** Full image-build [GitHub Actions 41371776711](https://github.com/JaxDoesIt/Broadcaster-unfollow/actions/runs/41371776711), exact source commit `23bfc83f48c8357d0a84a00efb0e38502c4621d9`: **SUCCESS**, `FriendCountProofTest: PASS`, full `BUILD SUCCESSFUL`, unique registry tag check and immutable pushed digest independently verified in job `125043571035`. Image tag:
+`ghcr.io/jaxdoesit/mcgateway-broadcast:release-160-friendcount-http1-parity-23bfc83f48c8357d0a84a00efb0e38502c4621d9`
+
+**Verified registry OCI index digest**:
+`sha256:dcdf50d975d2b985fa6d4ce94759e4fc3a67a98b5fe095e1cf436e4fb510e702`
+
+**Digest-pinned identity**:
+`ghcr.io/jaxdoesit/mcgateway-broadcast@sha256:dcdf50d975d2b985fa6d4ce94759e4fc3a67a98b5fe095e1cf436e4fb510e702`
+
+Registry index digest is **not** the same as local Docker image ID or architecture-specific manifest; verify both on the operator host. OCI labels include `io.mcgateway.overlay-variant=friend-count-proof-v3-http1-parity`, `io.mcgateway.friend-count-protocol=2`, `io.mcgateway.friend-removal-protocol=unsupported`, `io.mcgateway.production-ready=false`, upstream Release160 hash. This image is for supervised observation, NOT assignment, cleanup, public verified count, or automatic rollout. Stable/test tags unchanged; no running bot, Docker volume, Xbox friend, controller or DB was modified.
+
+**Next approval boundary:** This image would need a separately owner-approved, verified Bot0-only image change (with preserved original image and rollback) before an actual `friendcountv2 <32-char nonce>` capture. That producer is a bounded up-to-three-GET summary/list/summary observation, NOT a single GET and NOT guaranteed to return real complete counts. If HTTP status, response shape, paging, summary drift or auth fails, it must report unavailable and must not authorize capacity. The previous V4 PeopleHub response was HTTP400 under nonmatching client/header settings, and no live HTTP result has been observed for this new exact candidate. All 16 currently healthy service bots and Bot0 marker, paused updater, stopped Watchtower and paused cleanup remain under owner control. No fifth V4 trial is assumed authorized.
+
+
+
 This branch builds exact upstream `798d8b3a6107359643b525f1c9c3303c020ae09b`
 with a separate, read-only MCGateway observation overlay and Java21. It does not
 replace the release154 overlay, workflow, test/stable tags, or any live bot.
