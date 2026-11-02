@@ -5,7 +5,7 @@ on:
     paths:
       - tools/apply_mcgateway_release160_patch.py
       - tools/test_release160_patch.py
-      - .github/workflows/release160-count-producer-diagnostic-image.yml
+      - .github/workflows/release160-reviewed-removal-recovery-image.yml
       - tools/release160/**
   workflow_dispatch:
 permissions:
