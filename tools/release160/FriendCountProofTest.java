@@ -70,25 +70,25 @@ public final class FriendCountProofTest {
         check(failureFields(new Stub(new McgatewayFriendCountProof.Response(
             503,Map.of("Content-Type",List.of("application/json")),"{}")))
             .equals(" stage=summary-before category=http-rejected"));
-        check(failureFields(new Stub(resp("{\\"targetFriendCount\\":1}"),
+        check(failureFields(new Stub(resp("{\"targetFriendCount\":1}"),
             new McgatewayFriendCountProof.Response(400,
                 Map.of("Content-Type",List.of("application/json")),"{}")))
             .equals(" stage=friends category=http-rejected"));
-        check(failureFields(new Stub(resp("{\\"targetFriendCount\\":1}"),
-            resp("{\\"people\\":[],\\"next\\":null}")))
+        check(failureFields(new Stub(resp("{\"targetFriendCount\":1}"),
+            resp("{\"people\":[],\"next\":null}")))
             .equals(" stage=friends category=pagination-unproven"));
-        check(failureFields(new Stub(resp("{\\"targetFriendCount\\":1}"),
-            resp("{\\"people\\":[{\\"xuid\\":\\"1\\",\\"isFriend\\":true}]}"),
-            resp("{\\"targetFriendCount\\":2}")))
+        check(failureFields(new Stub(resp("{\"targetFriendCount\":1}"),
+            resp("{\"people\":[{\"xuid\":\"1\",\"isFriend\":true}]}"),
+            resp("{\"targetFriendCount\":2}")))
             .equals(" stage=crosscheck category=count-mismatch"));
-        check(failureFields(new Stub(resp("{\\"targetFriendCount\\":1}"),
-            resp("{\\"people\\":[]}"),
+        check(failureFields(new Stub(resp("{\"targetFriendCount\":1}"),
+            resp("{\"people\":[]}"),
             new McgatewayFriendCountProof.Response(503,
                 Map.of("Content-Type",List.of("application/json")),"{}")))
             .equals(" stage=summary-after category=http-rejected"));
-        check(failureFields(new Stub(resp("{\\"targetFriendCount\\":1}"),
-            resp("{\\"people\\":[]}"),
-            resp("{\\"targetFriendCount\\":1}")))
+        check(failureFields(new Stub(resp("{\"targetFriendCount\":1}"),
+            resp("{\"people\":[]}"),
+            resp("{\"targetFriendCount\":1}")))
             .equals(" stage=crosscheck category=count-mismatch"));
         String sensitive="XBL3.0 token secret-authorization response-body xuid=123";
         String unknown=McgatewayFriendCountProof.safeFailureFields(
