@@ -119,7 +119,9 @@ public final class FriendCountProofTest {
                 if(request.uri().equals(McgatewayFriendCountProof.FRIENDS)) throw fixture.thrown();
                 return resp("{\"targetFriendCount\":1}");
             });
-            check(report.equals(" stage=friends-fetch category="+fixture.expected()));
+            if(!report.equals(" stage=friends-fetch category="+fixture.expected()))
+                throw new AssertionError("typed fixture mismatch: expected="+fixture.expected()
+                    +" received="+report.replaceAll("[^a-zA-Z0-9 =-]",""));
             check(!report.contains(fakeSensitive) && !report.contains("123"));
         }
         // A successful HTTP read followed by a malformed friend row is a
