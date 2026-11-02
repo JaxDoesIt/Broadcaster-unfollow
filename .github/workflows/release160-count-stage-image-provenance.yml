@@ -1,8 +1,8 @@
-name: Verify immutable Release160 V6 typed-fetch diagnostic provenance (offline)
+name: Verify immutable Release160 V7 status-first diagnostic provenance (offline)
 
 on:
   push:
-    branches: [build/release160-friendcount-typed-fetch-v6-2026-11-02]
+    branches: [build/release160-friendcount-status-first-v7-2026-11-02]
     paths:
       - .github/workflows/release160-count-stage-image-provenance.yml
   workflow_dispatch:
@@ -16,11 +16,11 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 12
     env:
-      IMAGE: ghcr.io/jaxdoesit/mcgateway-broadcast@sha256:a4bb996d3d0fbe777ba4f5fcc710536ed52c99ad8827e0f7f936337e99a039e4
-      PINNED_INDEX: sha256:a4bb996d3d0fbe777ba4f5fcc710536ed52c99ad8827e0f7f936337e99a039e4
-      PINNED_MANIFEST: sha256:dd30ae498f59f6d90d0754372577b6b2355a40ad096e3cb5f9b4be2c06eebb5d
-      PINNED_CONFIG: sha256:94618f53d08334aa28051a50bbdd59fc93fe518d9eebcc152c48b1690015db61
-      PRODUCER_SHA: a34f457a23a854513731f28623f7c9a3539a8cb1
+      IMAGE: ghcr.io/jaxdoesit/mcgateway-broadcast@sha256:4e6386e3eb35c93797fb9070574e9145af2557aeb53dcbf19f7d2d057826f995
+      PINNED_INDEX: sha256:4e6386e3eb35c93797fb9070574e9145af2557aeb53dcbf19f7d2d057826f995
+      PINNED_MANIFEST: sha256:b6930f4279c758057f359e7c6b7e4b67e409d2ebdaea03bfce1e14b9cc5b88ac
+      PINNED_CONFIG: sha256:08edd4eb53b33a2eb03a1d36bf3ecdeeffc05bad018e537f7000a961b1a1b6ff
+      PRODUCER_SHA: 273e905da4d4e370cedd354388815807f0e20639
     steps:
       - uses: docker/setup-buildx-action@v4
       - uses: docker/login-action@v4
@@ -68,7 +68,7 @@ jobs:
             'org.opencontainers.image.revision':os.environ['PRODUCER_SHA'],
             'io.mcgateway.upstream-release':'160',
             'io.mcgateway.upstream-sha':'798d8b3a6107359643b525f1c9c3303c020ae09b',
-            'io.mcgateway.overlay-variant':'friend-count-proof-v6-typed-fetch',
+            'io.mcgateway.overlay-variant':'friend-count-proof-v7-status-first',
             'io.mcgateway.friend-count-protocol':'2',
             'io.mcgateway.friend-count-envelope':'upstream160-http11-no-redirect',
             'io.mcgateway.friend-count-error-schema':'fixed-stage-category-v3',
@@ -93,7 +93,7 @@ jobs:
           PY
       - uses: actions/upload-artifact@v4
         with:
-          name: release160-typed-fetch-v6-published-provenance
+          name: release160-status-first-v7-published-provenance
           path: provenance-receipt.json
           retention-days: 30
       - name: No host or stable channel changed
