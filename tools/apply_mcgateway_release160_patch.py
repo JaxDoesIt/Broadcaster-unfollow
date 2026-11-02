@@ -100,7 +100,10 @@ EDITS = [
                         warn("MCGATEWAY_FRIEND_COUNT_V160_V2 nonce=invalid ERROR unavailable");
                     } else {
                         try { info(StandaloneMain.sessionManager.friendManager().mcgatewayFriendCountProof(args[0])); }
-                        catch (Exception error) { warn("MCGATEWAY_FRIEND_COUNT_V160_V2 nonce=" + args[0] + " ERROR unavailable"); }
+                        catch (Exception error) {
+                            warn("MCGATEWAY_FRIEND_COUNT_V160_V2 nonce=" + args[0] + " ERROR unavailable"
+                                + com.rtm516.mcxboxbroadcast.core.McgatewayFriendCountProof.safeFailureFields(error));
+                        }
                     }
                 }
                 case "friends" -> warn("friends remove is DENIED: release160 removal contract requires a separate review.");
