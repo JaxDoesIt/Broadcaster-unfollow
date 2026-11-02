@@ -73,10 +73,10 @@ public final class FriendCountProofTest {
         check(failureFields(new Stub(resp("{\"targetFriendCount\":1}"),
             new McgatewayFriendCountProof.Response(400,
                 Map.of("Content-Type",List.of("application/json")),"{}")))
-            .equals(" stage=friends category=http-rejected"));
+            .equals(" stage=friends-fetch category=http-rejected"));
         check(failureFields(new Stub(resp("{\"targetFriendCount\":1}"),
             resp("{\"people\":[],\"next\":null}")))
-            .equals(" stage=friends category=pagination-unproven"));
+            .equals(" stage=friends-validate category=pagination-unproven"));
         check(failureFields(new Stub(resp("{\"targetFriendCount\":1}"),
             resp("{\"people\":[{\"xuid\":\"1\",\"isFriend\":true}]}"),
             resp("{\"targetFriendCount\":2}")))
@@ -90,6 +90,44 @@ public final class FriendCountProofTest {
             resp("{\"people\":[]}"),
             resp("{\"targetFriendCount\":1}")))
             .equals(" stage=crosscheck category=count-mismatch"));
+        // Simulate the actual Java HttpClient sendAsync().get() wrapper;
+        // the reporter must never output these fake sensitive exception messages.
+        String fakeSensitive="SECRET_TOKEN_FAKE XUID=123 fake-response-body";
+        record WrappedCase(Exception thrown,String expected) {}
+        var cases=List.of(
+            new WrappedCase(new java.util.concurrent.ExecutionException(
+                new java.net.http.HttpConnectTimeoutException(fakeSensitive)),"timeout"),
+            new WrappedCase(new java.util.concurrent.ExecutionException(
+                new java.net.UnknownHostException(fakeSensitive)),"dns-unavailable"),
+            new WrappedCase(new java.util.concurrent.CompletionException(
+                new java.net.ConnectException(fakeSensitive)),"connection-failed"),
+            new WrappedCase(new java.util.concurrent.ExecutionException(
+                new javax.net.ssl.SSLHandshakeException(fakeSensitive)),"tls-failed"),
+            new WrappedCase(new java.util.concurrent.ExecutionException(
+                new java.io.IOException(fakeSensitive)),"network-io"),
+            new WrappedCase(new java.util.concurrent.ExecutionException(
+                new java.util.concurrent.CancellationException(fakeSensitive)),"transport-cancelled"),
+            new WrappedCase(new java.util.concurrent.ExecutionException(
+                new java.util.concurrent.RejectedExecutionException(fakeSensitive)),"transport-unavailable"),
+            new WrappedCase(new java.util.concurrent.ExecutionException(
+                new IllegalStateException(fakeSensitive)),"unclassified"),
+            new WrappedCase(new java.util.concurrent.ExecutionException(
+                new IllegalStateException()) ,"unclassified")
+        );
+        for(var fixture : cases) {
+            String report=failureFields(request -> {
+                if(request.uri().equals(McgatewayFriendCountProof.FRIENDS)) throw fixture.thrown();
+                return resp("{\"targetFriendCount\":1}");
+            });
+            check(report.equals(" stage=friends-fetch category="+fixture.expected()));
+            check(!report.contains(fakeSensitive) && !report.contains("123"));
+        }
+        // A successful HTTP read followed by a malformed friend row is a
+        // roster validation failure, NOT an untrusted transport success.
+        String rosterFailure=failureFields(new Stub(
+            resp("{\"targetFriendCount\":1}"),
+            resp("{\"people\":[{\"xuid\":\"1\",\"isFriend\":\"yes\"}]}")));
+        check(rosterFailure.equals(" stage=friends-validate category=invalid-friends"));
         String sensitive="XBL3.0 token secret-authorization response-body xuid=123";
         String unknown=McgatewayFriendCountProof.safeFailureFields(
             new IllegalStateException(sensitive));
