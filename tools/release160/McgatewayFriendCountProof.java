@@ -86,6 +86,8 @@ public final class McgatewayFriendCountProof {
         if(reason instanceof java.net.UnknownHostException) return "dns-unavailable";
         if(reason instanceof javax.net.ssl.SSLException) return "tls-failed";
         if(reason instanceof java.net.ConnectException) return "connection-failed";
+        if(reason instanceof java.nio.charset.CharacterCodingException) return "invalid-utf8";
+        if(reason instanceof java.net.ProtocolException) return "http-protocol-unavailable";
         if(reason instanceof IOException) return "network-io";
         if(reason instanceof CancellationException) return "transport-cancelled";
         if(reason instanceof RejectedExecutionException) return "transport-unavailable";
@@ -100,6 +102,14 @@ public final class McgatewayFriendCountProof {
         if(Set.of("oversize body","JSON limit","JSON row limit").contains(message))
             return "response-limits";
         if("missing JSON content type".equals(message)) return "invalid-content-type";
+        // Only known local failure signatures and exception TYPES appear in receipts.
+        // Do not inspect arbitrary exception text or report URLs, headers, tokens,
+        // HTTP bodies, stack traces, identities or implementation class names.
+        if("redirected request".equals(message)) return "redirect-blocked";
+        if("malformed UTF-8".equals(message)) return "invalid-utf8";
+        if(reason instanceof IllegalArgumentException) return "request-invalid";
+        if(reason instanceof IllegalStateException) return "runtime-state-unavailable";
+        if(reason instanceof RuntimeException) return "runtime-unavailable";
         return "unclassified";
     }
     private static int safeSummary(Fetcher fetcher, String auth, long deadline,

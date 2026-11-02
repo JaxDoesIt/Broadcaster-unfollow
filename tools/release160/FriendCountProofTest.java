@@ -110,9 +110,23 @@ public final class FriendCountProofTest {
             new WrappedCase(new java.util.concurrent.ExecutionException(
                 new java.util.concurrent.RejectedExecutionException(fakeSensitive)),"transport-unavailable"),
             new WrappedCase(new java.util.concurrent.ExecutionException(
-                new IllegalStateException(fakeSensitive)),"unclassified"),
+                new java.net.ProtocolException(fakeSensitive)),"http-protocol-unavailable"),
             new WrappedCase(new java.util.concurrent.ExecutionException(
-                new IllegalStateException()) ,"unclassified")
+                new java.nio.charset.MalformedInputException(1)),"invalid-utf8"),
+            new WrappedCase(new java.util.concurrent.ExecutionException(
+                new IllegalStateException("redirected request")),"redirect-blocked"),
+            new WrappedCase(new java.util.concurrent.ExecutionException(
+                new IllegalStateException("malformed UTF-8")),"invalid-utf8"),
+            new WrappedCase(new java.util.concurrent.ExecutionException(
+                new IllegalArgumentException(fakeSensitive)),"request-invalid"),
+            new WrappedCase(new java.util.concurrent.ExecutionException(
+                new IllegalStateException(fakeSensitive)),"runtime-state-unavailable"),
+            new WrappedCase(new java.util.concurrent.ExecutionException(
+                new IllegalStateException()),"runtime-state-unavailable"),
+            new WrappedCase(new java.util.concurrent.ExecutionException(
+                new RuntimeException(fakeSensitive)),"runtime-unavailable"),
+            new WrappedCase(new java.util.concurrent.ExecutionException(
+                new Exception(fakeSensitive)),"unclassified")
         );
         for(var fixture : cases) {
             String report=failureFields(request -> {
