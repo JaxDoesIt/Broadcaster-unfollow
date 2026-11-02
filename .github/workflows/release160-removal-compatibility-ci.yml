@@ -45,6 +45,7 @@ jobs:
           cat overlay/tools/release160/config-proof.gradle.kts >> upstream/core/build.gradle.kts
           git -C upstream diff --check
           grep -Fq 'MCGATEWAY_RELEASE160_EXPIRY_HOLD' upstream/core/src/main/java/com/rtm516/mcxboxbroadcast/core/SessionManager.java
+          grep -Fq 'MCGATEWAY_ACCOUNTS_LIST_V160 result=provisional reason=ok' upstream/core/src/main/java/com/rtm516/mcxboxbroadcast/core/SessionManager.java
           ! grep -Fq 'scheduleWithFixedDelay(this::expireFriends' upstream/core/src/main/java/com/rtm516/mcxboxbroadcast/core/SessionManager.java
           grep -Fq 'friends remove is DENIED' upstream/bootstrap/standalone/src/main/java/com/rtm516/mcxboxbroadcast/bootstrap/standalone/StandaloneLoggerImpl.java
           grep -Fq 'MCGATEWAY_RELEASE160_FRIEND_REMOVAL_MODE' upstream/bootstrap/standalone/src/main/java/com/rtm516/mcxboxbroadcast/bootstrap/standalone/StandaloneLoggerImpl.java
