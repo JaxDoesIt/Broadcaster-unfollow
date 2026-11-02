@@ -184,16 +184,36 @@ def matches_original_hash(text, source_hash):
 
 
 def apply(root):
+    # The Release160 accounts-list command already prints its social summary.
+    # The existing Control Bot reader also requires a final completion marker.
+    # Pin this additional change to the same exact original SessionManager hash.
+    manager_relative = 'core/src/main/java/com/rtm516/mcxboxbroadcast/core/SessionManager.java'
+    summary_anchor = '''            for (String message : messages) {
+                coreLogger.info(message);
+            }'''
+    summary_replacement = '''            for (String message : messages) {
+                coreLogger.info(message);
+            }
+            // Display-only observation. Not authoritative capacity or
+            // evidence that the full friend roster was retrieved.
+            coreLogger.info("MCGATEWAY_ACCOUNTS_LIST_V160 result=provisional reason=ok");'''
     prepared = []
     for relative, original_hash, anchor, replacement in EDITS:
         path = root / relative
         if path.is_symlink() or not path.is_file():
             raise ValueError('missing/unsafe source: ' + relative)
         current = path.read_text(encoding='utf-8')
-        if matches_original_hash(current, original_hash):
-            original = current
-        elif current.count(replacement) == 1:
-            original = current.replace(replacement, anchor, 1)
+        # Recognize only the exact previously committed completion marker.
+        # A partial or foreign modification is not an accepted baseline.
+        preflight = current
+        if relative == manager_relative and summary_replacement in current:
+            if current.count(summary_replacement) != 1:
+                raise ValueError('ambiguous summary marker: ' + relative)
+            preflight = current.replace(summary_replacement, summary_anchor, 1)
+        if matches_original_hash(preflight, original_hash):
+            original = preflight
+        elif preflight.count(replacement) == 1:
+            original = preflight.replace(replacement, anchor, 1)
             if not matches_original_hash(original, original_hash):
                 raise ValueError('source hash mismatch: ' + relative)
         else:
@@ -201,6 +221,10 @@ def apply(root):
         if original.count(anchor) != 1:
             raise ValueError('ambiguous source anchor: ' + relative)
         expected = original.replace(anchor, replacement, 1)
+        if relative == manager_relative:
+            if expected.count(summary_anchor) != 1:
+                raise ValueError('ambiguous summary source anchor: ' + relative)
+            expected = expected.replace(summary_anchor, summary_replacement, 1)
         if current not in (original, expected):
             raise ValueError('unexpected patched source: ' + relative)
         prepared.append((path, current, expected))
