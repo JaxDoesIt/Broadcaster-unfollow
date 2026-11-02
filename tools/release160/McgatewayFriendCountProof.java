@@ -68,15 +68,33 @@ public final class McgatewayFriendCountProof {
         return " stage=other category=unclassified";
     }
     private static String failureCategory(Exception error) {
-        String message=error.getMessage();
-        if(error instanceof InterruptedException) return "interrupted";
-        if(error instanceof java.net.http.HttpTimeoutException || error instanceof TimeoutException
+        // sendAsync(...).get(...) wraps IO/timeout failures in ExecutionException.
+        // Traverse ONLY a short chain of known, typed wrappers, never serialize
+        // or log an exception, message, HTTP response, XUID or authorization.
+        Exception reason=error;
+        for(int depth=0;depth<4;depth++) {
+            if(!(reason instanceof ExecutionException || reason instanceof CompletionException
+                 || reason instanceof UncheckedIOException)) break;
+            Throwable next=reason.getCause();
+            if(!(next instanceof Exception e) || next==reason) break;
+            reason=e;
+        }
+        String message=reason.getMessage();
+        if(reason instanceof InterruptedException) return "interrupted";
+        if(reason instanceof java.net.http.HttpTimeoutException || reason instanceof TimeoutException
            || "capture timeout".equals(message) || "request timeout".equals(message)) return "timeout";
+        if(reason instanceof java.net.UnknownHostException) return "dns-unavailable";
+        if(reason instanceof javax.net.ssl.SSLException) return "tls-failed";
+        if(reason instanceof java.net.ConnectException) return "connection-failed";
+        if(reason instanceof IOException) return "network-io";
+        if(reason instanceof CancellationException) return "transport-cancelled";
+        if(reason instanceof RejectedExecutionException) return "transport-unavailable";
         if("HTTP failure".equals(message)) return "http-rejected";
         if(Set.of("pagination header","pagination body","unverified collection window metadata").contains(message))
             return "pagination-unproven";
         if("invalid targetFriendCount".equals(message)) return "invalid-summary";
-        if(Set.of("invalid people snapshot","invalid friend row").contains(message)) return "invalid-friends";
+        if(Set.of("invalid people snapshot","invalid friend row").contains(message))
+            return "invalid-friends";
         if(Set.of("invalid JSON","invalid JSON token","trailing JSON","duplicate JSON key").contains(message))
             return "invalid-json";
         if(Set.of("oversize body","JSON limit","JSON row limit").contains(message))
@@ -95,11 +113,20 @@ public final class McgatewayFriendCountProof {
     }
     private static int safeFriends(Fetcher fetcher, String auth, long deadline,
                                    LongSupplier clock) throws Exception {
+        // Distinguish transport/HTTP/header failures from validated JSON roster
+        // failures, while never observing, accepting, or mutating a partial count.
+        Response response;
         try {
-            return friends(fetch(fetcher,FRIENDS,"7",auth,deadline,clock),deadline,clock);
+            response=fetch(fetcher,FRIENDS,"7",auth,deadline,clock);
         } catch(Exception error) {
             if(error instanceof InterruptedException) Thread.currentThread().interrupt();
-            throw new StageFailure("friends",failureCategory(error));
+            throw new StageFailure("friends-fetch",failureCategory(error));
+        }
+        try {
+            return friends(response,deadline,clock);
+        } catch(Exception error) {
+            if(error instanceof InterruptedException) Thread.currentThread().interrupt();
+            throw new StageFailure("friends-validate",failureCategory(error));
         }
     }
     static String capture(Fetcher fetcher,String auth,String nonce,Duration budget,LongSupplier clock) throws Exception {
