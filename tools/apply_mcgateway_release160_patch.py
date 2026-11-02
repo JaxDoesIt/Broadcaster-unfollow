@@ -59,6 +59,7 @@ EDITS = [
     private static final class McgatewayCountClient {
         static final HttpClient CLIENT = HttpClient.newBuilder()
             .connectTimeout(java.time.Duration.ofSeconds(4))
+            .version(HttpClient.Version.HTTP_1_1)
             .followRedirects(HttpClient.Redirect.NEVER).build();
     }
 
