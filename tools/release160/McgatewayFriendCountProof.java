@@ -12,11 +12,9 @@ public final class McgatewayFriendCountProof {
     private static final Pattern NONCE=Pattern.compile("[0-9a-f]{32}"), XUID=Pattern.compile("[1-9][0-9]{0,19}"), COUNT=Pattern.compile("(?:0|[1-9][0-9]{0,9})");
     private McgatewayFriendCountProof() { }
     public static String capture(HttpClient client,String auth,String nonce) throws Exception {
-        if(client==null||client.followRedirects()!=HttpClient.Redirect.NEVER) throw new IllegalArgumentException("redirects disabled client required");
+        if(client==null||client.followRedirects()!=HttpClient.Redirect.NEVER||client.version()!=HttpClient.Version.HTTP_1_1) throw new IllegalArgumentException("HTTP1.1, redirects-disabled client required");
         return capture(req -> {
-            HttpRequest http = HttpRequest.newBuilder(req.uri()).GET().timeout(req.timeout())
-                .header("Authorization", req.authorization()).header("x-xbl-contract-version", req.contractVersion())
-                .header("Cache-Control", "no-store").build();
+            HttpRequest http = buildUpstreamCompatibleRequest(req);
             long deadline = System.nanoTime() + req.timeout().toNanos();
             BoundedSubscriber sub = new BoundedSubscriber(deadline);
             CompletableFuture<HttpResponse<String>> future = client.sendAsync(http, ignored -> sub);
@@ -30,6 +28,28 @@ public final class McgatewayFriendCountProof {
                 sub.cancel(); future.cancel(true); Thread.currentThread().interrupt(); throw error;
             }
         }, auth, nonce, BUDGET);
+    }
+    // Release160 FriendManager.get() uses contract v7 and accept-language
+    // on PeopleHub, while SessionManagerCore.socialSummary() uses contract v3
+    // without that header. Build a deterministic request before transport.
+    // Redirects remain disabled even though the upstream shared client follows
+    // them, because one diagnostic command must never silently make extra GETs.
+    static HttpRequest buildUpstreamCompatibleRequest(Request request) {
+        if (request == null || request.uri() == null || request.authorization() == null
+            || request.authorization().isBlank() || request.timeout() == null
+            || request.timeout().isZero() || request.timeout().isNegative())
+            throw new IllegalArgumentException("invalid count request");
+        boolean friendList = FRIENDS.equals(request.uri());
+        if (!friendList && !SUMMARY.equals(request.uri()))
+            throw new IllegalArgumentException("unexpected count source URI");
+        if (!request.contractVersion().equals(friendList ? "7" : "3"))
+            throw new IllegalArgumentException("wrong count service contract");
+        var builder = HttpRequest.newBuilder(request.uri()).GET().timeout(request.timeout())
+            .header("Authorization", request.authorization())
+            .header("x-xbl-contract-version", request.contractVersion());
+        if (friendList) builder.header("accept-language", "en-GB");
+        // Do not add Accept or Cache-Control. Original upstream does not.
+        return builder.build();
     }
     static String capture(Fetcher fetcher,String auth,String nonce) throws Exception { return capture(fetcher,auth,nonce,BUDGET,System::nanoTime); }
     static String capture(Fetcher fetcher,String auth,String nonce,Duration budget) throws Exception { return capture(fetcher,auth,nonce,budget,System::nanoTime); }
