@@ -221,7 +221,7 @@ public final class FriendCountProofTest {
         // friends-fetch, not invalid-utf8 or a trusted friend count.
         String diagnostic = failureFields(request -> {
             if (!request.uri().equals(McgatewayFriendCountProof.FRIENDS))
-                return resp("{\\"targetFriendCount\\":1}");
+                return resp("{\"targetFriendCount\":1}");
             var sub = McgatewayFriendCountProof.statusFirstBodyHandler(
                 new McgatewayFriendCountProof.BoundedSubscriber(
                     System.nanoTime() + Duration.ofSeconds(2).toNanos()))
