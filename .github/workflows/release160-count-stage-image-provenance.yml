@@ -1,0 +1,100 @@
+name: Verify immutable Release160 stage-diagnostic image provenance (offline)
+
+on:
+  push:
+    branches: [fix/release160-count-producer-safe-failure-categories-2026-11-01]
+    paths:
+      - .github/workflows/release160-count-stage-image-provenance.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  verify-published-candidate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    env:
+      IMAGE: ghcr.io/jaxdoesit/mcgateway-broadcast@sha256:5c238e3ab992b1030e6e825ebb2a979cebd91b1606e912bbc89b73aa4ace1982
+      PINNED_INDEX: sha256:5c238e3ab992b1030e6e825ebb2a979cebd91b1606e912bbc89b73aa4ace1982
+      PINNED_MANIFEST: sha256:538e08a5152905a255ebb4d206bab50b976b7bca0e3f9f80f100698b650c0589
+      PINNED_CONFIG: sha256:dfdb9dfec41480133cad3bcc113e770a5b80de93a41d521a3c7620c521cf964f
+      PRODUCER_SHA: 41a7f6c4e73395deaf35129ceaaa264d8c88e4ca
+    steps:
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Read OCI index and AMD64 manifest without executing image
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker buildx imagetools inspect --raw "$IMAGE" > "$RUNNER_TEMP/oci-index.json"
+          docker buildx imagetools inspect --raw "ghcr.io/jaxdoesit/mcgateway-broadcast@$PINNED_MANIFEST" > "$RUNNER_TEMP/oci-manifest.json"
+          python3 - <<'PY'
+          import os,json
+          from pathlib import Path
+          root=Path(os.environ['RUNNER_TEMP'])
+          index=json.loads((root/'oci-index.json').read_text())
+          amd64=[m for m in index['manifests'] if m.get('platform',{}).get('os')=='linux' and m.get('platform',{}).get('architecture')=='amd64']
+          assert len(amd64)==1 and amd64[0]['digest']==os.environ['PINNED_MANIFEST']
+          assert index['mediaType']=='application/vnd.oci.image.index.v1+json'
+          manifest=json.loads((root/'oci-manifest.json').read_text())
+          assert manifest['mediaType']=='application/vnd.oci.image.manifest.v1+json'
+          assert manifest['config']['digest']==os.environ['PINNED_CONFIG']
+          assert len(manifest.get('layers',[]))>0
+          print('Exact published OCI index, AMD64 manifest and config link: VERIFIED')
+          PY
+      - name: Inspect published immutable container labels without execution
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker pull --platform linux/amd64 "$IMAGE" >/dev/null
+          docker image inspect "$IMAGE" > "$RUNNER_TEMP/image-inspect.json"
+          python3 - <<'PY'
+          import os,json
+          from pathlib import Path
+          images=json.loads((Path(os.environ['RUNNER_TEMP'])/'image-inspect.json').read_text())
+          assert len(images)==1
+          image=images[0]
+          assert image['Os']=='linux' and image['Architecture']=='amd64'
+          assert image['Id'] in (os.environ['PINNED_CONFIG'],os.environ['PINNED_INDEX'])
+          assert os.environ['IMAGE'] in image['RepoDigests']
+          labels=image['Config']['Labels']
+          expected={
+            'org.opencontainers.image.revision':os.environ['PRODUCER_SHA'],
+            'io.mcgateway.upstream-release':'160',
+            'io.mcgateway.upstream-sha':'798d8b3a6107359643b525f1c9c3303c020ae09b',
+            'io.mcgateway.overlay-variant':'friend-count-proof-v4-stage-diagnostic',
+            'io.mcgateway.friend-count-protocol':'2',
+            'io.mcgateway.friend-count-envelope':'upstream160-http11-no-redirect',
+            'io.mcgateway.friend-count-error-schema':'fixed-stage-category-v1',
+            'io.mcgateway.friend-removal-protocol':'unsupported',
+            'io.mcgateway.production-ready':'false',
+            'io.mcgateway.target-minecraft':'26.60'
+          }
+          assert all(labels.get(k)==v for k,v in expected.items())
+          print('Published linux/amd64 config ID, digest and nonproduction labels: VERIFIED')
+          receipt={
+            'format':'mcgateway-release160-producer-image-attestation-v1',
+            'sourceCommit':os.environ['PRODUCER_SHA'],
+            'ociIndex':os.environ['PINNED_INDEX'],
+            'amd64Manifest':os.environ['PINNED_MANIFEST'],
+            'configId':os.environ['PINNED_CONFIG'],
+            'labelsVerified':True,
+            'countObservationOnly':True,
+            'friendRemovalSupported':False,
+            'productionReady':False
+          }
+          Path('provenance-receipt.json').write_text(json.dumps(receipt,indent=2)+'\n')
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release160-stage-diagnostic-published-provenance
+          path: provenance-receipt.json
+          retention-days: 30
+      - name: No host or stable channel changed
+        run: echo 'Verified only published candidate digests and labels. No Xbox requests, Dell, bot, stable tag, or cleanup changes.'
