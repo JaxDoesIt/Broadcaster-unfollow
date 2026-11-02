@@ -67,6 +67,54 @@ EDITS = [
         return McgatewayFriendCountProof.capture(McgatewayCountClient.CLIENT, sessionManager.getTokenHeader(), nonce);
     }
 
+    // Reviewed Release160 console compatibility. Never use upstream's
+    // retrying toRemove queue for Control Bot's durable single-attempt cleanup.
+    // This capability is unreachable through the console unless the operator
+    // explicitly enables the exact reviewed mode in the container environment.
+    private final java.util.concurrent.atomic.AtomicBoolean mcgatewayRemovalInFlight =
+        new java.util.concurrent.atomic.AtomicBoolean(false);
+    private static final class McgatewayReviewedRemovalClient {
+        static final HttpClient CLIENT = HttpClient.newBuilder()
+            .connectTimeout(java.time.Duration.ofSeconds(4))
+            .version(HttpClient.Version.HTTP_1_1)
+            .followRedirects(HttpClient.Redirect.NEVER)
+            .build();
+    }
+    public void mcgatewayReviewedRemoveOnce(String xuid) {
+        if (!McgatewayReviewedFriendRemove.validXuid(xuid))
+            throw new IllegalArgumentException("invalid reviewed removal identifier");
+        if (!mcgatewayRemovalInFlight.compareAndSet(false, true))
+            throw new IllegalStateException("reviewed removal already in progress");
+        try {
+            HttpRequest request = McgatewayReviewedFriendRemove.buildRequest(xuid, sessionManager.getTokenHeader());
+            McgatewayReviewedRemovalClient.CLIENT.sendAsync(request, HttpResponse.BodyHandlers.discarding())
+                .whenComplete((response, failure) -> {
+                    try {
+                        if (failure != null || response == null) {
+                            logger.warn("Failed to remove all friend relationships for XUID " + xuid + " (request unavailable)");
+                        } else if (!McgatewayReviewedFriendRemove.successStatus(response.statusCode())) {
+                            logger.warn("Failed to remove all friend relationships for XUID " + xuid
+                                + " (HTTP " + response.statusCode() + ")");
+                        } else {
+                            // Only a confirmed HTTP 200/204 may produce the
+                            // existing Control Bot's strict success receipt.
+                            // Do not make a second request, retry, or infer
+                            // success from command acceptance.
+                            logger.info("Removed Unknown (" + xuid + ") as a friend");
+                        }
+                    } catch (RuntimeException unexpected) {
+                        // Do not expose HTTP bodies, authorization or raw exception text.
+                        logger.warn("Failed to remove all friend relationships for XUID " + xuid + " (result unavailable)");
+                    } finally {
+                        mcgatewayRemovalInFlight.set(false);
+                    }
+                });
+        } catch (RuntimeException error) {
+            mcgatewayRemovalInFlight.set(false);
+            throw new IllegalStateException("reviewed removal request unavailable");
+        }
+    }
+
     public void init(CoreConfig.FriendSyncConfig friendSyncConfig) {'''),
     ('core/src/main/java/com/rtm516/mcxboxbroadcast/core/SessionManagerCore.java',
      'bbf8812477decc41e2008a520e7f5ec13c0071ede6fa8a960199cf1b1c886a29',
@@ -106,7 +154,16 @@ EDITS = [
                         }
                     }
                 }
-                case "friends" -> warn("friends remove is DENIED: release160 removal contract requires a separate review.");
+                case "friends" -> {
+                    String reviewMode = System.getenv("MCGATEWAY_RELEASE160_FRIEND_REMOVAL_MODE");
+                    if (com.rtm516.mcxboxbroadcast.core.McgatewayReviewedFriendRemove.permitted(args, reviewMode)) {
+                        StandaloneMain.sessionManager.friendManager().mcgatewayReviewedRemoveOnce(args[1]);
+                        // Enqueue/transport acceptance is NOT the remote success receipt.
+                        info("MCGATEWAY_RELEASE160_FRIEND_REMOVE queued");
+                    } else {
+                        warn("friends remove is DENIED: release160 removal contract requires a separate review.");
+                    }
+                }
                 case "version" -> info("MCXboxBroadcast Standalone " + BuildData.VERSION);'''),
     ('core/src/main/java/com/rtm516/mcxboxbroadcast/core/configs/ConfigLoader.java',
      '34fc61332904d73ea38c75cf551215d987b5d4e77badcf7807cf6005de01533f',
@@ -147,17 +204,19 @@ def apply(root):
         if current not in (original, expected):
             raise ValueError('unexpected patched source: ' + relative)
         prepared.append((path, current, expected))
-    helper_source = Path(__file__).parent / 'release160' / 'McgatewayFriendCountProof.java'
-    helper_target = root / 'core/src/main/java/com/rtm516/mcxboxbroadcast/core/McgatewayFriendCountProof.java'
-    if helper_source.is_symlink() or not helper_source.is_file():
-        raise ValueError('missing/unsafe count proof template')
-    expected_helper = helper_source.read_text(encoding='utf-8')
-    if helper_target.is_symlink() or helper_target.exists() and not helper_target.is_file():
-        raise ValueError('unsafe count proof target')
-    current_helper = helper_target.read_text(encoding='utf-8') if helper_target.exists() else ''
-    if current_helper and current_helper != expected_helper:
-        raise ValueError('source hash mismatch: count proof helper')
-    prepared.append((helper_target, current_helper, expected_helper))
+    # Both helper files are preflighted before any file is written.
+    for helper_name in ('McgatewayFriendCountProof.java', 'McgatewayReviewedFriendRemove.java'):
+        helper_source = Path(__file__).parent / 'release160' / helper_name
+        helper_target = root / 'core/src/main/java/com/rtm516/mcxboxbroadcast/core' / helper_name
+        if helper_source.is_symlink() or not helper_source.is_file():
+            raise ValueError('missing/unsafe reviewed helper template: ' + helper_name)
+        expected_helper = helper_source.read_text(encoding='utf-8')
+        if helper_target.is_symlink() or helper_target.exists() and not helper_target.is_file():
+            raise ValueError('unsafe reviewed helper target: ' + helper_name)
+        current_helper = helper_target.read_text(encoding='utf-8') if helper_target.exists() else ''
+        if current_helper and current_helper != expected_helper:
+            raise ValueError('source hash mismatch: reviewed helper ' + helper_name)
+        prepared.append((helper_target, current_helper, expected_helper))
     # Preflight every byte of every input before writing any file.
     changed = False
     for path, current, expected in prepared:

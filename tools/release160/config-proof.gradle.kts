@@ -18,3 +18,11 @@ tasks.register<JavaExec>("mcgatewayFriendCountProof") {
     mainClass.set("com.rtm516.mcxboxbroadcast.core.FriendCountProofTest")
     maxHeapSize = "128m"
 }
+
+// Reviewed Release160 removal compatibility. No runtime mutation executed.
+tasks.register<JavaExec>("mcgatewayFriendRemovalCompatibility") {
+    dependsOn(mcgatewayProof.classesTaskName)
+    classpath = mcgatewayProof.runtimeClasspath
+    mainClass.set("com.rtm516.mcxboxbroadcast.core.FriendRemovalCompatProofTest")
+    maxHeapSize = "128m"
+}

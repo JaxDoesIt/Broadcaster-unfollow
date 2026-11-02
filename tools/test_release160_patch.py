@@ -25,7 +25,15 @@ def main():
         check('removeRelationship' not in friend and 'MCGATEWAY_TRANSFER_SUCCESS' not in relay,'invented removal/success marker')
         check(all(item in core for item in ('MCGATEWAY_HEALTH_V160 initialized=','rta=','httpSignaling=','published=')),'health fields missing')
         check('MCGATEWAY_RELAY_IDENTITY_V1' in relay and 'MCGATEWAY_RELAY_SIGNALLED_V1' in relay,'relay markers missing')
-        check('friends remove is DENIED' in logger,'unsupported removal not denied')
+        check('friends remove is DENIED' in logger,'reviewed removal default-deny path missing')
+        check('MCGATEWAY_RELEASE160_FRIEND_REMOVAL_MODE' in logger and 'mcgatewayReviewedRemoveOnce(args[1])' in logger,'reviewed console compatibility missing')
+        check('mcgatewayRemovalInFlight.compareAndSet(false, true)' in friend,'one-inflight removal gate missing')
+        check('HttpResponse.BodyHandlers.discarding()' in friend and 'sendAsync(request' in friend,'one-shot body-discarding async request missing')
+        check('mcgatewayRemovalInFlight.set(false)' in friend,'reviewed removal release fence missing')
+        check('Removed Unknown (' in friend and 'response.statusCode()' in friend,'verified-only success log missing')
+        reviewed=root/'core/src/main/java/com/rtm516/mcxboxbroadcast/core/McgatewayReviewedFriendRemove.java'
+        check(reviewed.read_bytes()==PATCH.with_name('release160').joinpath('McgatewayReviewedFriendRemove.java').read_bytes(),'reviewed remove helper source mismatch')
+        check('owner-reviewed-v160' in reviewed.read_text() and 'public static boolean permitted' in reviewed.read_text(),'reviewed removal gate missing')
         check('case "friendcountv2"' in logger and 'nonce=invalid ERROR unavailable' in logger,'nonce-bound proof console missing')
         helper=root/'core/src/main/java/com/rtm516/mcxboxbroadcast/core/McgatewayFriendCountProof.java'
         check(helper.read_bytes()==PATCH.with_name('release160').joinpath('McgatewayFriendCountProof.java').read_bytes(),'count helper source mismatch')
@@ -54,5 +62,5 @@ def main():
         helper.write_text(helper.read_text()+'\n// tampered helper\n');before=digest(root);helper_before=helper.read_bytes()
         failed=run('python3',str(PATCH),str(root));check(failed.returncode!=0,'tampered helper accepted')
         check(digest(root)==before and helper.read_bytes()==helper_before,'tampered helper failure modified source')
-    print('test_release160_patch: ok (apply,idempotence,all-input-preflight,hash-guard,helper-tamper,expiry-disabled,truth-markers)')
+    print('test_release160_patch: ok (apply,idempotence,hash-guard,friend-count,reviewed-removal-default-deny,expiry-disabled)')
 if __name__=='__main__': main()

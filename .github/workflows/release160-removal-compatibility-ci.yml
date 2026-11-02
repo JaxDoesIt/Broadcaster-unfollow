@@ -1,0 +1,68 @@
+name: Release160 reviewed one-shot removal compatibility (offline)
+
+on:
+  push:
+    branches: [fix/release160-friend-removal-one-shot-2026-11-02]
+    paths:
+      - '.github/workflows/release160-removal-compatibility-ci.yml'
+      - 'tools/apply_mcgateway_release160_patch.py'
+      - 'tools/test_release160_patch.py'
+      - 'tools/release160/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  review:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      UPSTREAM_SHA: 798d8b3a6107359643b525f1c9c3303c020ae09b
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: MCXboxBroadcast/Broadcaster
+          ref: 798d8b3a6107359643b525f1c9c3303c020ae09b
+          path: upstream
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          path: overlay
+          persist-credentials: false
+      - name: Verify exact upstream source and isolated overlay, zero mutations
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C upstream rev-parse HEAD)" = "$UPSTREAM_SHA"
+          python3 -B overlay/tools/test_release160_patch.py upstream
+          python3 -B overlay/tools/apply_mcgateway_release160_patch.py upstream
+          mkdir -p upstream/core/src/mcgatewayProof/java/com/rtm516/mcxboxbroadcast/core/configs
+          mkdir -p upstream/core/src/mcgatewayProof/java/com/rtm516/mcxboxbroadcast/core
+          cp overlay/tools/release160/ConfigCompatibilityProof.java upstream/core/src/mcgatewayProof/java/com/rtm516/mcxboxbroadcast/core/configs/
+          cp overlay/tools/release160/FriendCountProofTest.java upstream/core/src/mcgatewayProof/java/com/rtm516/mcxboxbroadcast/core/
+          cp overlay/tools/release160/FriendRemovalCompatProofTest.java upstream/core/src/mcgatewayProof/java/com/rtm516/mcxboxbroadcast/core/
+          cat overlay/tools/release160/config-proof.gradle.kts >> upstream/core/build.gradle.kts
+          git -C upstream diff --check
+          grep -Fq 'MCGATEWAY_RELEASE160_EXPIRY_HOLD' upstream/core/src/main/java/com/rtm516/mcxboxbroadcast/core/SessionManager.java
+          ! grep -Fq 'scheduleWithFixedDelay(this::expireFriends' upstream/core/src/main/java/com/rtm516/mcxboxbroadcast/core/SessionManager.java
+          grep -Fq 'friends remove is DENIED' upstream/bootstrap/standalone/src/main/java/com/rtm516/mcxboxbroadcast/bootstrap/standalone/StandaloneLoggerImpl.java
+          grep -Fq 'MCGATEWAY_RELEASE160_FRIEND_REMOVAL_MODE' upstream/bootstrap/standalone/src/main/java/com/rtm516/mcxboxbroadcast/bootstrap/standalone/StandaloneLoggerImpl.java
+          grep -Fq 'mcgatewayRemovalInFlight.compareAndSet(false, true)' upstream/core/src/main/java/com/rtm516/mcxboxbroadcast/core/FriendManager.java
+          grep -Fq 'HttpResponse.BodyHandlers.discarding()' upstream/core/src/main/java/com/rtm516/mcxboxbroadcast/core/FriendManager.java
+          grep -Fq 'HttpClient.Redirect.NEVER' upstream/core/src/main/java/com/rtm516/mcxboxbroadcast/core/FriendManager.java
+          grep -Fq 'owner-reviewed-v160' upstream/core/src/main/java/com/rtm516/mcxboxbroadcast/core/McgatewayReviewedFriendRemove.java
+          grep -Fq 'statusFirstBodyHandler(sub)' upstream/core/src/main/java/com/rtm516/mcxboxbroadcast/core/McgatewayFriendCountProof.java
+          echo 'Owner-reviewed one-shot adapter default DENY, no retry, no success until 200/204.'
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/wrapper-validation@v4
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Compile full Java sources and run offline count and removal fixtures
+        working-directory: upstream
+        run: ./gradlew --no-daemon --max-workers=2 -Dorg.gradle.jvmargs=-Xmx2g :core:mcgatewayConfigCompatibility :core:mcgatewayFriendCountProof :core:mcgatewayFriendRemovalCompatibility :bootstrap-standalone:classes
+      - name: Confirm nonproduction scope
+        run: |
+          echo 'SOURCE ONLY. No image build, Xbox API request, Docker, Dell, friend deletion, Control Bot modification or cleanup resume.'
