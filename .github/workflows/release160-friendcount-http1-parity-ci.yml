@@ -1,0 +1,69 @@
+name: Release160 Xbox accurate-count HTTP1.1 request parity and fail-closed proof
+
+on:
+  push:
+    branches:
+      - fix/release160-friendcount-request-parity-2026-11-01
+    paths:
+      - '.github/workflows/release160-friendcount-http1-parity-ci.yml'
+      - 'tools/release160/**'
+      - 'tools/apply_mcgateway_release160_patch.py'
+      - 'tools/test_release160_patch.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pinned-upstream-source-and-fake-http:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      UPSTREAM_SHA: 798d8b3a6107359643b525f1c9c3303c020ae09b
+    steps:
+      - name: Checkout immutable upstream Java source
+        uses: actions/checkout@v4
+        with:
+          repository: MCXboxBroadcast/Broadcaster
+          ref: 798d8b3a6107359643b525f1c9c3303c020ae09b
+          path: upstream
+          persist-credentials: false
+      - name: Checkout this exact source-only patch and test branch
+        uses: actions/checkout@v4
+        with:
+          path: overlay
+          persist-credentials: false
+      - name: Validate exact baseline and install test helper in disposable CI worktree
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C upstream rev-parse HEAD)" = "$UPSTREAM_SHA"
+          python3 -B overlay/tools/test_release160_patch.py upstream
+          python3 -B overlay/tools/apply_mcgateway_release160_patch.py upstream
+          mkdir -p upstream/core/src/mcgatewayProof/java/com/rtm516/mcxboxbroadcast/core/configs
+          cp overlay/tools/release160/ConfigCompatibilityProof.java upstream/core/src/mcgatewayProof/java/com/rtm516/mcxboxbroadcast/core/configs/
+          mkdir -p upstream/core/src/mcgatewayProof/java/com/rtm516/mcxboxbroadcast/core
+          cp overlay/tools/release160/FriendCountProofTest.java upstream/core/src/mcgatewayProof/java/com/rtm516/mcxboxbroadcast/core/
+          cat overlay/tools/release160/config-proof.gradle.kts >> upstream/core/build.gradle.kts
+          git -C upstream diff --check
+          grep -Fq MCGATEWAY_RELEASE160_EXPIRY_HOLD upstream/core/src/main/java/com/rtm516/mcxboxbroadcast/core/SessionManager.java
+          grep -Fq 'friends remove is DENIED' upstream/bootstrap/standalone/src/main/java/com/rtm516/mcxboxbroadcast/bootstrap/standalone/StandaloneLoggerImpl.java
+          grep -Fq 'unverified collection window metadata' upstream/core/src/main/java/com/rtm516/mcxboxbroadcast/core/McgatewayFriendCountProof.java
+          grep -Fq 'buildUpstreamCompatibleRequest' upstream/core/src/main/java/com/rtm516/mcxboxbroadcast/core/McgatewayFriendCountProof.java
+          grep -Fq 'HttpClient.Version.HTTP_1_1' upstream/core/src/main/java/com/rtm516/mcxboxbroadcast/core/FriendManager.java
+          grep -Fq 'accept-language' upstream/core/src/main/java/com/rtm516/mcxboxbroadcast/core/McgatewayFriendCountProof.java
+          echo "Pinned Release160 source, expiry hold, friend mutation denial, HTTP1.1 request parity and pagination fail-close verified."
+      - name: Install Java21 and Gradle with wrapper validation
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/wrapper-validation@v4
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Compile pinned application and run mocked count and config proofs
+        working-directory: upstream
+        run: |
+          ./gradlew --no-daemon --max-workers=2 -Dorg.gradle.jvmargs=-Xmx2g :core:mcgatewayConfigCompatibility :core:mcgatewayFriendCountProof :bootstrap-standalone:classes
+      - name: Mark nonproduction scope
+        run: |
+          echo "Only source-only mocked request/response proof ran. No Xbox request, Docker, image build, deployed image, Control Bot, Dell or friend cleanup change."
