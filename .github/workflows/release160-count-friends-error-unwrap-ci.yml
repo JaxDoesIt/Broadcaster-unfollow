@@ -1,9 +1,9 @@
-name: Release160 typed fetch runtime and transport failure proof (offline)
+name: Release160 status-first response and strict decoder proof (offline)
 
 on:
   push:
     branches:
-      - fix/release160-count-fetch-failure-typed-2026-11-02
+      - fix/release160-status-first-body-handler-2026-11-02
     paths:
       - '.github/workflows/release160-count-friends-error-unwrap-ci.yml'
       - 'tools/release160/**'
@@ -58,6 +58,8 @@ jobs:
           grep -Fq 'ExecutionException' upstream/core/src/main/java/com/rtm516/mcxboxbroadcast/core/McgatewayFriendCountProof.java
           grep -Fq 'runtime-state-unavailable' upstream/core/src/main/java/com/rtm516/mcxboxbroadcast/core/McgatewayFriendCountProof.java
           grep -Fq 'request-invalid' upstream/core/src/main/java/com/rtm516/mcxboxbroadcast/core/McgatewayFriendCountProof.java
+          grep -Fq 'statusFirstBodyHandler(sub)' upstream/core/src/main/java/com/rtm516/mcxboxbroadcast/core/McgatewayFriendCountProof.java
+          grep -Fq 'HttpResponse.BodySubscribers.replacing("")' upstream/core/src/main/java/com/rtm516/mcxboxbroadcast/core/McgatewayFriendCountProof.java
           echo "Pinned Release160 source, expiry hold, friend mutation denial, HTTP1.1 request parity and pagination fail-close verified."
       - name: Install Java21 and Gradle with wrapper validation
         uses: actions/setup-java@v4

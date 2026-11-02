@@ -17,7 +17,9 @@ public final class McgatewayFriendCountProof {
             HttpRequest http = buildUpstreamCompatibleRequest(req);
             long deadline = System.nanoTime() + req.timeout().toNanos();
             BoundedSubscriber sub = new BoundedSubscriber(deadline);
-            CompletableFuture<HttpResponse<String>> future = client.sendAsync(http, ignored -> sub);
+            // Inspect the HTTP status BEFORE choosing whether to decode bytes.
+            // Reject non-200 responses without retaining or UTF-8-decoding error bodies.
+            CompletableFuture<HttpResponse<String>> future = client.sendAsync(http, statusFirstBodyHandler(sub));
             try {
                 HttpResponse<String> response = future.get(Math.max(1, deadline - System.nanoTime()), TimeUnit.NANOSECONDS);
                 if (!response.uri().equals(req.uri())) { sub.cancel(); future.cancel(true); throw new IllegalStateException("redirected request"); }
@@ -28,6 +30,15 @@ public final class McgatewayFriendCountProof {
                 sub.cancel(); future.cancel(true); Thread.currentThread().interrupt(); throw error;
             }
         }, auth, nonce, BUDGET);
+    }
+    // The body handler runs once headers are available. A failed HTTP status
+    // must not be masked by malformed/untrusted response bytes.
+    // replacing("") consumes and discards those bytes without buffering them.
+    // Only HTTP 200 invokes the existing size- and deadline-bounded strict decoder.
+    static HttpResponse.BodyHandler<String> statusFirstBodyHandler(BoundedSubscriber success) {
+        if (success == null) throw new IllegalArgumentException("missing bounded subscriber");
+        return info -> info.statusCode() == 200
+            ? success : HttpResponse.BodySubscribers.replacing("");
     }
     // Release160 FriendManager.get() uses contract v7 and accept-language
     // on PeopleHub, while SessionManagerCore.socialSummary() uses contract v3

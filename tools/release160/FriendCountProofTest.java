@@ -49,6 +49,7 @@ public final class FriendCountProofTest {
         failWith(new McgatewayFriendCountProof.Response(200, Map.of(), "x".repeat(8 * 1024 * 1024 + 1)));
         expectFailure(() -> McgatewayFriendCountProof.capture(request -> { Thread.sleep(3); return new McgatewayFriendCountProof.Response(200, Map.of(), request.uri().equals(McgatewayFriendCountProof.FRIENDS) ? "{\"people\":[]}" : "{\"targetFriendCount\":0}"); }, "Bearer hidden", NONCE, Duration.ofMillis(1)));
         boundedSubscriberCancels();
+        statusFirstResponseHandler();
         redirectClientRejected();
         upstreamRequestParity();
         finalSummaryDeadlineRejected();
@@ -188,6 +189,59 @@ public final class FriendCountProofTest {
         Subscription oversizedSubscription = new Subscription(); oversized.onSubscribe(oversizedSubscription); oversized.onNext(List.of(ByteBuffer.allocate(8 * 1024 * 1024 + 1))); check(oversizedSubscription.cancelled); expectFailure(() -> oversized.getBody().toCompletableFuture().get());
         McgatewayFriendCountProof.BoundedSubscriber expired = new McgatewayFriendCountProof.BoundedSubscriber(System.nanoTime() - 1);
         Subscription expiredSubscription = new Subscription(); expired.onSubscribe(expiredSubscription); expired.onNext(List.of(ByteBuffer.allocate(1))); check(expiredSubscription.cancelled); expectFailure(() -> expired.getBody().toCompletableFuture().get());
+    }
+    private static void statusFirstResponseHandler() throws Exception {
+        // Real BodyHandler/BodySubscriber calls, but completely fake HTTP headers
+        // and bytes: no socket, token, Xbox call, container or friend mutation.
+        final byte[] invalid = { (byte) 0xc3, (byte) 0x28 };
+        for (int status : List.of(206, 302, 400, 404, 429, 500, 503)) {
+            var strict = new McgatewayFriendCountProof.BoundedSubscriber(
+                System.nanoTime() + Duration.ofSeconds(2).toNanos());
+            var chosen = McgatewayFriendCountProof.statusFirstBodyHandler(strict)
+                .apply(new MockResponseInfo(status));
+            check(chosen != strict);
+            chosen.onSubscribe(new Subscription());
+            chosen.onNext(List.of(ByteBuffer.wrap(invalid)));
+            chosen.onComplete();
+            check(chosen.getBody().toCompletableFuture().get().equals(""));
+            check(!strict.getBody().toCompletableFuture().isDone());
+        }
+        // A 200 response still takes the original strict bounded UTF-8 path.
+        var success = new McgatewayFriendCountProof.BoundedSubscriber(
+            System.nanoTime() + Duration.ofSeconds(2).toNanos());
+        var chosen200 = McgatewayFriendCountProof.statusFirstBodyHandler(success)
+            .apply(new MockResponseInfo(200));
+        check(chosen200 == success);
+        chosen200.onSubscribe(new Subscription());
+        chosen200.onNext(List.of(ByteBuffer.wrap(invalid)));
+        chosen200.onComplete();
+        expectFailure(() -> chosen200.getBody().toCompletableFuture().get());
+
+        // The same non-200 fake reply must classify as HTTP rejection at
+        // friends-fetch, not invalid-utf8 or a trusted friend count.
+        String diagnostic = failureFields(request -> {
+            if (!request.uri().equals(McgatewayFriendCountProof.FRIENDS))
+                return resp("{\\"targetFriendCount\\":1}");
+            var sub = McgatewayFriendCountProof.statusFirstBodyHandler(
+                new McgatewayFriendCountProof.BoundedSubscriber(
+                    System.nanoTime() + Duration.ofSeconds(2).toNanos()))
+                .apply(new MockResponseInfo(400));
+            sub.onSubscribe(new Subscription());
+            sub.onNext(List.of(ByteBuffer.wrap(invalid)));
+            sub.onComplete();
+            return new McgatewayFriendCountProof.Response(400, Map.of(), 
+                sub.getBody().toCompletableFuture().get());
+        });
+        check(diagnostic.equals(" stage=friends-fetch category=http-rejected"));
+    }
+    private static final class MockResponseInfo implements java.net.http.HttpResponse.ResponseInfo {
+        private final int status;
+        MockResponseInfo(int status) { this.status=status; }
+        public int statusCode() { return status; }
+        public java.net.http.HttpHeaders headers() {
+            return java.net.http.HttpHeaders.of(Map.of(), (name,value) -> true);
+        }
+        public HttpClient.Version version() { return HttpClient.Version.HTTP_1_1; }
     }
     private static void upstreamRequestParity() throws Exception {
         // Pure request-construction assertions. No HTTP send, token lookup,
