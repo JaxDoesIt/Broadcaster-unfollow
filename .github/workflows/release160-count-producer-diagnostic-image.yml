@@ -1,7 +1,7 @@
-name: Build immutable Release160 friend count cause-classification diagnostic
+name: Build immutable Release160 typed-fetch diagnostic V6
 on:
   push:
-    branches: [build/release160-friendcount-cause-diagnostic-2026-11-02]
+    branches: [build/release160-friendcount-typed-fetch-v6-2026-11-02]
     paths:
       - tools/apply_mcgateway_release160_patch.py
       - tools/test_release160_patch.py
@@ -12,14 +12,14 @@ permissions:
   contents: read
   packages: write
 concurrency:
-  group: mcgateway-release160-count-cause-diagnostic
+  group: mcgateway-release160-count-typed-fetch-v6
   cancel-in-progress: false
 jobs:
   candidate:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
-      IMAGE: ghcr.io/jaxdoesit/mcgateway-broadcast:release-160-friendcount-cause-diagnostic-${{ github.sha }}
+      IMAGE: ghcr.io/jaxdoesit/mcgateway-broadcast:release-160-friendcount-typed-fetch-v6-${{ github.sha }}
       BUILD_NUMBER: "160"
       UPSTREAM_SHA: 798d8b3a6107359643b525f1c9c3303c020ae09b
     steps:
@@ -57,6 +57,9 @@ jobs:
           grep -Fq 'reason instanceof ExecutionException' upstream/core/src/main/java/com/rtm516/mcxboxbroadcast/core/McgatewayFriendCountProof.java
           grep -Fq 'new StageFailure("friends-fetch"' upstream/core/src/main/java/com/rtm516/mcxboxbroadcast/core/McgatewayFriendCountProof.java
           grep -Fq 'new StageFailure("friends-validate"' upstream/core/src/main/java/com/rtm516/mcxboxbroadcast/core/McgatewayFriendCountProof.java
+          grep -Fq 'runtime-state-unavailable' upstream/core/src/main/java/com/rtm516/mcxboxbroadcast/core/McgatewayFriendCountProof.java
+          grep -Fq 'request-invalid' upstream/core/src/main/java/com/rtm516/mcxboxbroadcast/core/McgatewayFriendCountProof.java
+          grep -Fq 'invalid-utf8' upstream/core/src/main/java/com/rtm516/mcxboxbroadcast/core/McgatewayFriendCountProof.java
           ! grep -F -q 'scheduleWithFixedDelay(this::expireFriends' upstream/core/src/main/java/com/rtm516/mcxboxbroadcast/core/SessionManager.java
       - uses: actions/setup-java@v5
         with:
@@ -99,10 +102,10 @@ jobs:
             org.opencontainers.image.revision=${{ github.sha }}
             io.mcgateway.upstream-release=160
             io.mcgateway.upstream-sha=798d8b3a6107359643b525f1c9c3303c020ae09b
-            io.mcgateway.overlay-variant=friend-count-proof-v5-cause-diagnostic
+            io.mcgateway.overlay-variant=friend-count-proof-v6-typed-fetch
             io.mcgateway.friend-count-protocol=2
             io.mcgateway.friend-count-envelope=upstream160-http11-no-redirect
-            io.mcgateway.friend-count-error-schema=fixed-stage-category-v2
+            io.mcgateway.friend-count-error-schema=fixed-stage-category-v3
             io.mcgateway.friend-removal-protocol=unsupported
             io.mcgateway.production-ready=false
             io.mcgateway.target-minecraft=26.60
@@ -116,15 +119,15 @@ jobs:
           from pathlib import Path
           digest=os.environ['IMAGE_DIGEST']
           assert re.fullmatch(r'sha256:[0-9a-f]{64}',digest)
-          proof={'format':'mcgateway-release160-count-cause-diagnostic-candidate-v1','producerSourceCommit':os.environ['GITHUB_SHA'],
+          proof={'format':'mcgateway-release160-count-typed-fetch-v6-candidate-v1','producerSourceCommit':os.environ['GITHUB_SHA'],
                  'upstreamSourceCommit':os.environ['UPSTREAM_SHA'],'image':os.environ['IMAGE'],
                  'digest':digest,'countProtocol':2,'requestTransport':'http11-no-redirect','cleanupSupported':False,'productionReady':False,
-                 'javaCountFixtures':'passed','errorSchema':'fixed-stage-category-v2'}
+                 'javaCountFixtures':'passed','errorSchema':'fixed-stage-category-v3'}
           Path('candidate-proof.json').write_text(json.dumps(proof,indent=2)+'\n')
           PYPROOF
           echo 'Candidate only: test/stable tags and live bots were not changed.'
       - uses: actions/upload-artifact@v4
         with:
-          name: release160-count-cause-diagnostic-candidate-proof
+          name: release160-count-typed-fetch-v6-candidate-proof
           path: candidate-proof.json
           retention-days: 30
