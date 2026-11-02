@@ -221,7 +221,9 @@ public final class FriendCountProofTest {
         // friends-fetch, not invalid-utf8 or a trusted friend count.
         String diagnostic = failureFields(request -> {
             if (!request.uri().equals(McgatewayFriendCountProof.FRIENDS))
-                return resp("{\"targetFriendCount\":1}");
+                return new McgatewayFriendCountProof.Response(200,
+                    Map.of("Content-Type", List.of("application/json")),
+                    "{\"targetFriendCount\":1}");
             var sub = McgatewayFriendCountProof.statusFirstBodyHandler(
                 new McgatewayFriendCountProof.BoundedSubscriber(
                     System.nanoTime() + Duration.ofSeconds(2).toNanos()))
@@ -232,7 +234,8 @@ public final class FriendCountProofTest {
             return new McgatewayFriendCountProof.Response(400, Map.of(), 
                 sub.getBody().toCompletableFuture().get());
         });
-        check(diagnostic.equals(" stage=friends-fetch category=http-rejected"));
+        if (!diagnostic.equals(" stage=friends-fetch category=http-rejected"))
+            throw new AssertionError("expected sanitized friends-fetch HTTP failure, got "+diagnostic);
     }
     private static final class MockResponseInfo implements java.net.http.HttpResponse.ResponseInfo {
         private final int status;
