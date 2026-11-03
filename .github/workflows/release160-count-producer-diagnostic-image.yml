@@ -1,7 +1,7 @@
-name: Build immutable Release160 safe HTTP status diagnostic V8
+name: Build immutable Release160 one-page alternate people diagnostic V9
 on:
   push:
-    branches: [fix/release160-safe-http-status-diagnostic-2026-11-02]
+    branches: [fix/release160-people-alternative-v9-2026-11-02]
     paths:
       - tools/apply_mcgateway_release160_patch.py
       - tools/test_release160_patch.py
@@ -12,14 +12,14 @@ permissions:
   contents: read
   packages: write
 concurrency:
-  group: mcgateway-release160-count-safe-http-status-v8
+  group: mcgateway-release160-count-people-alternative-v9
   cancel-in-progress: false
 jobs:
   candidate:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
-      IMAGE: ghcr.io/jaxdoesit/mcgateway-broadcast:release-160-friendcount-safe-http-v8-${{ github.sha }}
+      IMAGE: ghcr.io/jaxdoesit/mcgateway-broadcast:release-160-people-alternative-v9-${{ github.sha }}
       BUILD_NUMBER: "160"
       UPSTREAM_SHA: 798d8b3a6107359643b525f1c9c3303c020ae09b
     steps:
@@ -62,6 +62,8 @@ jobs:
           grep -Fq 'invalid-utf8' upstream/core/src/main/java/com/rtm516/mcxboxbroadcast/core/McgatewayFriendCountProof.java
           grep -Fq 'statusFirstBodyHandler(sub)' upstream/core/src/main/java/com/rtm516/mcxboxbroadcast/core/McgatewayFriendCountProof.java
           grep -Fq 'SafeHttpStatusFailure' upstream/core/src/main/java/com/rtm516/mcxboxbroadcast/core/McgatewayFriendCountProof.java
+          grep -Fq 'alternatePeopleProbe' upstream/core/src/main/java/com/rtm516/mcxboxbroadcast/core/McgatewayFriendCountProof.java
+          grep -Fq 'maxItems=1' upstream/core/src/main/java/com/rtm516/mcxboxbroadcast/core/McgatewayFriendCountProof.java
           grep -Fq 'HttpResponse.BodySubscribers.replacing("")' upstream/core/src/main/java/com/rtm516/mcxboxbroadcast/core/McgatewayFriendCountProof.java
           grep -Fq 'statusFirstResponseHandler();' upstream/core/src/mcgatewayProof/java/com/rtm516/mcxboxbroadcast/core/FriendCountProofTest.java
           ! grep -F -q 'scheduleWithFixedDelay(this::expireFriends' upstream/core/src/main/java/com/rtm516/mcxboxbroadcast/core/SessionManager.java
@@ -106,10 +108,10 @@ jobs:
             org.opencontainers.image.revision=${{ github.sha }}
             io.mcgateway.upstream-release=160
             io.mcgateway.upstream-sha=798d8b3a6107359643b525f1c9c3303c020ae09b
-            io.mcgateway.overlay-variant=friend-count-proof-v8-safe-http-status
+            io.mcgateway.overlay-variant=friend-count-proof-v9-people-alternative
             io.mcgateway.friend-count-protocol=2
             io.mcgateway.friend-count-envelope=upstream160-http11-no-redirect
-            io.mcgateway.friend-count-error-schema=fixed-stage-category-http-status-v4
+            io.mcgateway.friend-count-error-schema=fixed-stage-category-alternate-people-v5
             io.mcgateway.friend-removal-protocol=unsupported
             io.mcgateway.production-ready=false
             io.mcgateway.target-minecraft=26.60
@@ -123,15 +125,15 @@ jobs:
           from pathlib import Path
           digest=os.environ['IMAGE_DIGEST']
           assert re.fullmatch(r'sha256:[0-9a-f]{64}',digest)
-          proof={'format':'mcgateway-release160-safe-http-v8-candidate-v1','producerSourceCommit':os.environ['GITHUB_SHA'],
+          proof={'format':'mcgateway-release160-people-alternative-v9-candidate-v1','producerSourceCommit':os.environ['GITHUB_SHA'],
                  'upstreamSourceCommit':os.environ['UPSTREAM_SHA'],'image':os.environ['IMAGE'],
                  'digest':digest,'countProtocol':2,'requestTransport':'http11-no-redirect','cleanupSupported':False,'productionReady':False,
-                 'javaCountFixtures':'passed','errorSchema':'fixed-stage-category-http-status-v4'}
+                 'javaCountFixtures':'passed','errorSchema':'fixed-stage-category-alternate-people-v5'}
           Path('candidate-proof.json').write_text(json.dumps(proof,indent=2)+'\n')
           PYPROOF
           echo 'Candidate only: test/stable tags and live bots were not changed.'
       - uses: actions/upload-artifact@v4
         with:
-          name: release160-safe-http-v8-candidate-proof
+          name: release160-people-alternative-v9-candidate-proof
           path: candidate-proof.json
           retention-days: 30
