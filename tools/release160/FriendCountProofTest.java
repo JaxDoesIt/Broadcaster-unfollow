@@ -278,15 +278,15 @@ public final class FriendCountProofTest {
     }
     private static void alternativePeopleDiagnostic() throws Exception {
         for (var scenario : List.of(
-            new Object[]{resp("{\\"people\\":[{}],\\"totalCount\\":1000}"),"alternate-total-matches"},
-            new Object[]{resp("{\\"people\\":[{}],\\"totalCount\\":999}"),"alternate-total-differs"},
-            new Object[]{resp("{\\"people\\":[{}]}"),"alternate-invalid-shape"},
-            new Object[]{resp("{\\"people\\":[{},{}],\\"totalCount\\":1000}"),"alternate-invalid-shape"},
+            new Object[]{resp("{\"people\":[{}],\"totalCount\":1000}"),"alternate-total-matches"},
+            new Object[]{resp("{\"people\":[{}],\"totalCount\":999}"),"alternate-total-differs"},
+            new Object[]{resp("{\"people\":[{}]}"),"alternate-invalid-shape"},
+            new Object[]{resp("{\"people\":[{},{}],\"totalCount\":1000}"),"alternate-invalid-shape"},
             new Object[]{errorStatus(403),"http-403"},
             new Object[]{errorStatus(429),"http-429"},
             new Object[]{errorStatus(500),"http-500"})) {
             var alt=(McgatewayFriendCountProof.Response)scenario[0];
-            var stub=new Stub(resp("{\\"targetFriendCount\\":1000}"),errorStatus(500),alt);
+            var stub=new Stub(resp("{\"targetFriendCount\":1000}"),errorStatus(500),alt);
             String report=v9FailureFields(stub);
             check(report.equals(" stage=alternate-people category="+scenario[1]));
             check(stub.requests.size()==3);
@@ -296,12 +296,12 @@ public final class FriendCountProofTest {
             check(stub.requests.get(2).contractVersion().equals("legacy"));
             check(!report.contains("SECRET_TOKEN_FAKE") && !report.contains("123"));
         }
-        var ordinary=new Stub(resp("{\\"targetFriendCount\\":1000}"),errorStatus(400));
+        var ordinary=new Stub(resp("{\"targetFriendCount\":1000}"),errorStatus(400));
         check(v9FailureFields(ordinary).equals(" stage=friends-fetch category=http-400"));
         check(ordinary.requests.size()==2); // HTTP 400 never causes fallback
-        var success=new Stub(resp("{\\"targetFriendCount\\":1}"),
-            resp("{\\"people\\":[{\\"xuid\\":\\"7\\",\\"isFriend\\":true}]}"),
-            resp("{\\"targetFriendCount\\":1}"));
+        var success=new Stub(resp("{\"targetFriendCount\":1}"),
+            resp("{\"people\":[{\"xuid\":\"7\",\"isFriend\":true}]}"),
+            resp("{\"targetFriendCount\":1}"));
         String line=McgatewayFriendCountProof.captureWithAlternative(success,"Bearer fake-test",NONCE,
             Duration.ofSeconds(20),System::nanoTime);
         check(line.contains("count=1 before=1 after=1") && success.requests.size()==3);
