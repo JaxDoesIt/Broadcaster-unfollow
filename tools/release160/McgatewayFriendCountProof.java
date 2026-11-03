@@ -73,6 +73,12 @@ public final class McgatewayFriendCountProof {
             super("unavailable"); this.stage=stage; this.category=category;
         }
     }
+    // Only fixed HTTP status classes may leave the diagnostic. Never emit
+    // response bytes, headers, request URLs, authorization or error messages.
+    private static final class SafeHttpStatusFailure extends IllegalStateException {
+        final int code;
+        SafeHttpStatusFailure(int code) { super("HTTP failure"); this.code=code; }
+    }
     public static String safeFailureFields(Exception error) {
         if(error instanceof StageFailure failure)
             return " stage="+failure.stage+" category="+failure.category;
@@ -102,6 +108,20 @@ public final class McgatewayFriendCountProof {
         if(reason instanceof IOException) return "network-io";
         if(reason instanceof CancellationException) return "transport-cancelled";
         if(reason instanceof RejectedExecutionException) return "transport-unavailable";
+        if(reason instanceof SafeHttpStatusFailure http) return switch(http.code) {
+            case 400 -> "http-400";
+            case 401 -> "http-401";
+            case 403 -> "http-403";
+            case 404 -> "http-404";
+            case 408 -> "http-408";
+            case 409 -> "http-409";
+            case 429 -> "http-429";
+            case 500 -> "http-500";
+            case 502 -> "http-502";
+            case 503 -> "http-503";
+            case 504 -> "http-504";
+            default -> "http-rejected";
+        };
         if("HTTP failure".equals(message)) return "http-rejected";
         if(Set.of("pagination header","pagination body","unverified collection window metadata").contains(message))
             return "pagination-unproven";
@@ -163,7 +183,7 @@ public final class McgatewayFriendCountProof {
         catch(Exception error) { throw new StageFailure("crosscheck",failureCategory(error)); }
         return "MCGATEWAY_FRIEND_COUNT_V160_V2 nonce="+nonce+" count="+count+" before="+before+" after="+after+" complete=true pages=1";
     }
-    private static Response fetch(Fetcher f,URI uri,String contract,String auth,long deadline,LongSupplier clock) throws Exception { long remaining=deadline-clock.getAsLong(); if(remaining<=0) throw new IllegalStateException("capture timeout"); Response r=f.fetch(new Request(uri,contract,auth,Duration.ofNanos(remaining))); if(r==null||r.statusCode()!=200) throw new IllegalStateException("HTTP failure"); checkDeadline(deadline,clock); if(r.body()==null||r.body().getBytes(StandardCharsets.UTF_8).length>MAX_BODY) throw new IllegalStateException("oversize body"); boolean json=false; for(var h:r.headers().entrySet()){String n=normalize(h.getKey()); if(n.equals("contenttype"))for(String v:h.getValue())json|=v.matches("(?i)\\s*application/json(?:\\s*;\\s*charset=[a-z0-9._-]+)?\\s*"); if(n.equals("link")||Set.of("continuation","continuationtoken","next","nextlink","nextpage","nextpagelink","nextpagetoken","paging","paginginfo","pagination","hasmore","skiptoken","odatanextlink","totalpages").contains(n))throw new IllegalStateException("pagination header");} if(!json)throw new IllegalStateException("missing JSON content type"); return r; }
+    private static Response fetch(Fetcher f,URI uri,String contract,String auth,long deadline,LongSupplier clock) throws Exception { long remaining=deadline-clock.getAsLong(); if(remaining<=0) throw new IllegalStateException("capture timeout"); Response r=f.fetch(new Request(uri,contract,auth,Duration.ofNanos(remaining))); if(r==null) throw new IllegalStateException("HTTP failure"); if(r.statusCode()!=200) throw new SafeHttpStatusFailure(r.statusCode()); checkDeadline(deadline,clock); if(r.body()==null||r.body().getBytes(StandardCharsets.UTF_8).length>MAX_BODY) throw new IllegalStateException("oversize body"); boolean json=false; for(var h:r.headers().entrySet()){String n=normalize(h.getKey()); if(n.equals("contenttype"))for(String v:h.getValue())json|=v.matches("(?i)\\s*application/json(?:\\s*;\\s*charset=[a-z0-9._-]+)?\\s*"); if(n.equals("link")||Set.of("continuation","continuationtoken","next","nextlink","nextpage","nextpagelink","nextpagetoken","paging","paginginfo","pagination","hasmore","skiptoken","odatanextlink","totalpages").contains(n))throw new IllegalStateException("pagination header");} if(!json)throw new IllegalStateException("missing JSON content type"); return r; }
     private static int summary(Response r,long deadline,LongSupplier clock){Map<String,Object> root=object(parse(r.body(),deadline,clock),"summary object"); rejectContinuation(root,deadline,clock); Object v=root.get("targetFriendCount"); if(!(v instanceof NumberLiteral n)||!COUNT.matcher(n.text()).matches())throw new IllegalStateException("invalid targetFriendCount"); int count=Integer.parseInt(n.text()); root.clear(); checkDeadline(deadline,clock); return count;}
     private static int friends(Response r,long deadline,LongSupplier clock){Map<String,Object> root=object(parse(r.body(),deadline,clock),"friends object"); rejectContinuation(root,deadline,clock); rejectCollectionWindow(root,deadline,clock); Object raw=root.get("people"); if(!(raw instanceof List<?> people)||people.size()>MAX_ROWS)throw new IllegalStateException("invalid people snapshot"); Set<String> seen=new HashSet<>();int count=0;for(Object row:people){if((count&127)==0)checkDeadline(deadline,clock);Map<String,Object> p=object(row,"person");Object x=p.get("xuid"),fr=p.get("isFriend");if(!(x instanceof String id)||!validXuid(id)||!seen.add(id)||!(fr instanceof Boolean))throw new IllegalStateException("invalid friend row");if((Boolean)fr)count++;p.clear();}root.clear();checkDeadline(deadline,clock);return count;}
     private static boolean validXuid(String id){if(!XUID.matcher(id).matches())return false;try{Long.parseUnsignedLong(id);return true;}catch(NumberFormatException error){return false;}}
