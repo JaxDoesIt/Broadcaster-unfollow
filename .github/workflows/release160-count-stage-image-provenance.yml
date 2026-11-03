@@ -1,8 +1,8 @@
-name: Verify immutable Release160 V8 safe HTTP diagnostic provenance (offline)
+name: Verify immutable Release160 V9 alternative people diagnostic provenance (offline)
 
 on:
   push:
-    branches: [fix/release160-safe-http-status-diagnostic-2026-11-02]
+    branches: [fix/release160-people-alternative-v9-2026-11-02]
     paths:
       - .github/workflows/release160-count-stage-image-provenance.yml
   workflow_dispatch:
@@ -16,11 +16,11 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 12
     env:
-      IMAGE: ghcr.io/jaxdoesit/mcgateway-broadcast@sha256:fa8648c010b394a9971f68c01d2f321db3ea0873d1d574c5b893c1da1a3c188c
-      PINNED_INDEX: sha256:fa8648c010b394a9971f68c01d2f321db3ea0873d1d574c5b893c1da1a3c188c
-      PINNED_MANIFEST: sha256:b582b2387b4654db05bcbadb5fe385be3ee489e7a88247ceefcb8585e4374aa5
-      PINNED_CONFIG: sha256:823d5edc904a2b4e68b4ee8bf280683ba0114d5ec0c08ffd592c630b020a1681
-      PRODUCER_SHA: c01f6976d34ca2b3ee9e7dc42c68139b76a63b3f
+      IMAGE: ghcr.io/jaxdoesit/mcgateway-broadcast@sha256:cdb6d33d087f08b92f9f260a900195b183326e9d93969906b5f184b8e753c64a
+      PINNED_INDEX: sha256:cdb6d33d087f08b92f9f260a900195b183326e9d93969906b5f184b8e753c64a
+      PINNED_MANIFEST: sha256:11e77776468f66dc438956a3831be66f70a2685ce2b911b1f74d21e52b9421c8
+      PINNED_CONFIG: sha256:08ee87f098da1565b95691ddc06d017b2174eb01b8a80824df7fc7a09a53c68b
+      PRODUCER_SHA: 638254b674994a6d3bcb93a4afcd2398b4fcad80
     steps:
       - uses: docker/setup-buildx-action@v4
       - uses: docker/login-action@v4
@@ -68,10 +68,10 @@ jobs:
             'org.opencontainers.image.revision':os.environ['PRODUCER_SHA'],
             'io.mcgateway.upstream-release':'160',
             'io.mcgateway.upstream-sha':'798d8b3a6107359643b525f1c9c3303c020ae09b',
-            'io.mcgateway.overlay-variant':'friend-count-proof-v8-safe-http-status',
+            'io.mcgateway.overlay-variant':'friend-count-proof-v9-people-alternative',
             'io.mcgateway.friend-count-protocol':'2',
             'io.mcgateway.friend-count-envelope':'upstream160-http11-no-redirect',
-            'io.mcgateway.friend-count-error-schema':'fixed-stage-category-http-status-v4',
+            'io.mcgateway.friend-count-error-schema':'fixed-stage-category-alternate-people-v5',
             'io.mcgateway.friend-removal-protocol':'unsupported',
             'io.mcgateway.production-ready':'false',
             'io.mcgateway.target-minecraft':'26.60'
@@ -93,7 +93,7 @@ jobs:
           PY
       - uses: actions/upload-artifact@v4
         with:
-          name: release160-safe-http-v8-published-provenance
+          name: release160-people-alternative-v9-published-provenance
           path: provenance-receipt.json
           retention-days: 30
       - name: No host or stable channel changed
