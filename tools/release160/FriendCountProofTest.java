@@ -70,11 +70,11 @@ public final class FriendCountProofTest {
     private static void safeFailureCategories() {
         check(failureFields(new Stub(new McgatewayFriendCountProof.Response(
             503,Map.of("Content-Type",List.of("application/json")),"{}")))
-            .equals(" stage=summary-before category=http-rejected"));
+            .equals(" stage=summary-before category=http-503"));
         check(failureFields(new Stub(resp("{\"targetFriendCount\":1}"),
             new McgatewayFriendCountProof.Response(400,
                 Map.of("Content-Type",List.of("application/json")),"{}")))
-            .equals(" stage=friends-fetch category=http-rejected"));
+            .equals(" stage=friends-fetch category=http-400"));
         check(failureFields(new Stub(resp("{\"targetFriendCount\":1}"),
             resp("{\"people\":[],\"next\":null}")))
             .equals(" stage=friends-validate category=pagination-unproven"));
@@ -86,11 +86,26 @@ public final class FriendCountProofTest {
             resp("{\"people\":[]}"),
             new McgatewayFriendCountProof.Response(503,
                 Map.of("Content-Type",List.of("application/json")),"{}")))
-            .equals(" stage=summary-after category=http-rejected"));
+            .equals(" stage=summary-after category=http-503"));
         check(failureFields(new Stub(resp("{\"targetFriendCount\":1}"),
             resp("{\"people\":[]}"),
             resp("{\"targetFriendCount\":1}")))
             .equals(" stage=crosscheck category=count-mismatch"));
+        // Distinguish a rejected Xbox request by its fixed HTTP status only.
+        // HTTP bodies, headers, XUIDs and tokens must never enter receipts.
+        for (int status : List.of(400, 401, 403, 404, 408, 409, 429, 500, 502, 503, 504, 302, 206)) {
+            String expected = switch (status) {
+                case 400,401,403,404,408,409,429,500,502,503,504 -> "http-" + status;
+                default -> "http-rejected";
+            };
+            String actual = failureFields(new Stub(resp("{\"targetFriendCount\":1}"),
+                new McgatewayFriendCountProof.Response(status,
+                    Map.of("Content-Type", List.of("text/html")),
+                    "SECRET_TOKEN_FAKE XUID=123 private-response-body")));
+            check(actual.equals(" stage=friends-fetch category=" + expected));
+            check(!actual.contains("SECRET") && !actual.contains("123")
+                && !actual.contains("private-response-body") && !actual.contains("text/html"));
+        }
         // Simulate the actual Java HttpClient sendAsync().get() wrapper;
         // the reporter must never output these fake sensitive exception messages.
         String fakeSensitive="SECRET_TOKEN_FAKE XUID=123 fake-response-body";
