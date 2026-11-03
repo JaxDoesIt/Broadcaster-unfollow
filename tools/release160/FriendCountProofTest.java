@@ -52,6 +52,7 @@ public final class FriendCountProofTest {
         statusFirstResponseHandler();
         redirectClientRejected();
         upstreamRequestParity();
+        alternativePeopleDiagnostic();
         finalSummaryDeadlineRejected();
         abaAccepted();
         expectFailure(() -> McgatewayFriendCountProof.capture(new Stub(resp("{\"targetFriendCount\":1}"), resp("{\"people\":[{\"xuid\":\"7\",\"isFriend\":true}]}"), resp("{\"targetFriendCount\":2}")), "Bearer hidden", NONCE));
@@ -261,6 +262,50 @@ public final class FriendCountProofTest {
         }
         public HttpClient.Version version() { return HttpClient.Version.HTTP_1_1; }
     }
+    // V9 may issue one additional *read-only* GET only when PeopleHub
+    // returns HTTP 500. A totalCount from this legacy page is never exact.
+    private static String v9FailureFields(Stub stub) {
+        try {
+            McgatewayFriendCountProof.captureWithAlternative(stub,"Bearer fake-test",NONCE,
+                Duration.ofSeconds(20),System::nanoTime);
+            throw new AssertionError("expected diagnostic, never fallback count");
+        } catch(AssertionError error) { throw error; }
+        catch(Exception error) { return McgatewayFriendCountProof.safeFailureFields(error); }
+    }
+    private static McgatewayFriendCountProof.Response errorStatus(int code) {
+        return new McgatewayFriendCountProof.Response(code,Map.of("Content-Type",
+            List.of("text/html")),"SECRET_TOKEN_FAKE XUID=123");
+    }
+    private static void alternativePeopleDiagnostic() throws Exception {
+        for (var scenario : List.of(
+            new Object[]{resp("{\\"people\\":[{}],\\"totalCount\\":1000}"),"alternate-total-matches"},
+            new Object[]{resp("{\\"people\\":[{}],\\"totalCount\\":999}"),"alternate-total-differs"},
+            new Object[]{resp("{\\"people\\":[{}]}"),"alternate-invalid-shape"},
+            new Object[]{resp("{\\"people\\":[{},{}],\\"totalCount\\":1000}"),"alternate-invalid-shape"},
+            new Object[]{errorStatus(403),"http-403"},
+            new Object[]{errorStatus(429),"http-429"},
+            new Object[]{errorStatus(500),"http-500"})) {
+            var alt=(McgatewayFriendCountProof.Response)scenario[0];
+            var stub=new Stub(resp("{\\"targetFriendCount\\":1000}"),errorStatus(500),alt);
+            String report=v9FailureFields(stub);
+            check(report.equals(" stage=alternate-people category="+scenario[1]));
+            check(stub.requests.size()==3);
+            check(stub.requests.get(0).uri().equals(McgatewayFriendCountProof.SUMMARY));
+            check(stub.requests.get(1).uri().equals(McgatewayFriendCountProof.FRIENDS));
+            check(stub.requests.get(2).uri().equals(McgatewayFriendCountProof.ALTERNATIVE));
+            check(stub.requests.get(2).contractVersion().equals("legacy"));
+            check(!report.contains("SECRET_TOKEN_FAKE") && !report.contains("123"));
+        }
+        var ordinary=new Stub(resp("{\\"targetFriendCount\\":1000}"),errorStatus(400));
+        check(v9FailureFields(ordinary).equals(" stage=friends-fetch category=http-400"));
+        check(ordinary.requests.size()==2); // HTTP 400 never causes fallback
+        var success=new Stub(resp("{\\"targetFriendCount\\":1}"),
+            resp("{\\"people\\":[{\\"xuid\\":\\"7\\",\\"isFriend\\":true}]}"),
+            resp("{\\"targetFriendCount\\":1}"));
+        String line=McgatewayFriendCountProof.captureWithAlternative(success,"Bearer fake-test",NONCE,
+            Duration.ofSeconds(20),System::nanoTime);
+        check(line.contains("count=1 before=1 after=1") && success.requests.size()==3);
+    }
     private static void upstreamRequestParity() throws Exception {
         // Pure request-construction assertions. No HTTP send, token lookup,
         // Docker, Xbox, or friend mutation occurs in this test.
@@ -282,6 +327,24 @@ public final class FriendCountProofTest {
         check(summary.headers().firstValue("Authorization").orElse("").equals("XBL3.0 fake-test-only"));
         check(friends.headers().firstValue("Authorization").orElse("").equals("XBL3.0 fake-test-only"));
         check(summary.headers().map().size() == 2 && friends.headers().map().size() == 3);
+        var alt=McgatewayFriendCountProof.buildUpstreamCompatibleRequest(
+            new McgatewayFriendCountProof.Request(McgatewayFriendCountProof.ALTERNATIVE,
+                "legacy","XBL3.0 fake-test-only",Duration.ofSeconds(8)));
+        check("GET".equals(alt.method()));
+        check(alt.uri().equals(McgatewayFriendCountProof.ALTERNATIVE));
+        check(alt.headers().map().size()==1);
+        check(alt.headers().firstValue("Authorization").orElse("").equals("XBL3.0 fake-test-only"));
+        check(alt.headers().firstValue("x-xbl-contract-version").isEmpty());
+        check(alt.headers().firstValue("accept-language").isEmpty());
+        check(alt.headers().firstValue("Accept").isEmpty());
+        check(alt.bodyPublisher().isEmpty());
+        expectFailure(() -> McgatewayFriendCountProof.buildUpstreamCompatibleRequest(
+            new McgatewayFriendCountProof.Request(
+                java.net.URI.create("https://social.xboxlive.com/users/me/people?view=All&startIndex=0&maxItems=2"),
+                "legacy","XBL3.0 fake-test-only",Duration.ofSeconds(8))));
+        expectFailure(() -> McgatewayFriendCountProof.buildUpstreamCompatibleRequest(
+            new McgatewayFriendCountProof.Request(McgatewayFriendCountProof.ALTERNATIVE,
+                "3","XBL3.0 fake-test-only",Duration.ofSeconds(8))));
         for (HttpRequest request : List.of(summary, friends)) {
             check(request.headers().firstValue("Accept").isEmpty());
             check(request.headers().firstValue("Cache-Control").isEmpty());
