@@ -249,7 +249,7 @@ public final class FriendCountProofTest {
             return new McgatewayFriendCountProof.Response(400, Map.of(), 
                 sub.getBody().toCompletableFuture().get());
         });
-        if (!diagnostic.equals(" stage=friends-fetch category=http-rejected"))
+        if (!diagnostic.equals(" stage=friends-fetch category=http-400"))
             throw new AssertionError("expected sanitized friends-fetch HTTP failure, got "+diagnostic);
     }
     private static final class MockResponseInfo implements java.net.http.HttpResponse.ResponseInfo {
