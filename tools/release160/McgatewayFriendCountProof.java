@@ -8,6 +8,10 @@ import java.io.*; import java.net.URI; import java.net.http.*; import java.nio.B
 /** Read-only, nonce-bound proof of one complete PeopleHub friend snapshot. */
 public final class McgatewayFriendCountProof {
     static final URI SUMMARY=URI.create("https://social.xboxlive.com/users/me/summary"), FRIENDS=URI.create("https://peoplehub.xboxlive.com/users/me/people/friends");
+    // Microsoft GDK documents this paginated social collection, but restricts
+    // supported callers. One page is probed only after PeopleHub HTTP 500.
+    // It is never accepted as a mutual-friend roster or capacity proof.
+    static final URI ALTERNATIVE=URI.create("https://social.xboxlive.com/users/me/people?view=All&startIndex=0&maxItems=1");
     private static final Duration BUDGET=Duration.ofSeconds(20); private static final int MAX_BODY=8*1024*1024, MAX_ROWS=10_000, MAX_DEPTH=32, MAX_NODES=500_000;
     private static final Pattern NONCE=Pattern.compile("[0-9a-f]{32}"), XUID=Pattern.compile("[1-9][0-9]{0,19}"), COUNT=Pattern.compile("(?:0|[1-9][0-9]{0,9})");
     private McgatewayFriendCountProof() { }
@@ -29,7 +33,7 @@ public final class McgatewayFriendCountProof {
             } catch (InterruptedException error) {
                 sub.cancel(); future.cancel(true); Thread.currentThread().interrupt(); throw error;
             }
-        }, auth, nonce, BUDGET);
+        }, auth, nonce, BUDGET, System::nanoTime, true);
     }
     // The body handler runs once headers are available. A failed HTTP status
     // must not be masked by malformed/untrusted response bytes.
@@ -51,13 +55,14 @@ public final class McgatewayFriendCountProof {
             || request.timeout().isZero() || request.timeout().isNegative())
             throw new IllegalArgumentException("invalid count request");
         boolean friendList = FRIENDS.equals(request.uri());
-        if (!friendList && !SUMMARY.equals(request.uri()))
+        boolean alternate = ALTERNATIVE.equals(request.uri());
+        if (!friendList && !alternate && !SUMMARY.equals(request.uri()))
             throw new IllegalArgumentException("unexpected count source URI");
-        if (!request.contractVersion().equals(friendList ? "7" : "3"))
+        if (!request.contractVersion().equals(alternate ? "legacy" : friendList ? "7" : "3"))
             throw new IllegalArgumentException("wrong count service contract");
         var builder = HttpRequest.newBuilder(request.uri()).GET().timeout(request.timeout())
-            .header("Authorization", request.authorization())
-            .header("x-xbl-contract-version", request.contractVersion());
+            .header("Authorization", request.authorization());
+        if (!alternate) builder.header("x-xbl-contract-version", request.contractVersion());
         if (friendList) builder.header("accept-language", "en-GB");
         // Do not add Accept or Cache-Control. Original upstream does not.
         return builder.build();
@@ -171,19 +176,59 @@ public final class McgatewayFriendCountProof {
         }
     }
     static String capture(Fetcher fetcher,String auth,String nonce,Duration budget,LongSupplier clock) throws Exception {
+        return capture(fetcher,auth,nonce,budget,clock,false);
+    }
+    static String captureWithAlternative(Fetcher fetcher,String auth,String nonce,Duration budget,LongSupplier clock) throws Exception {
+        return capture(fetcher,auth,nonce,budget,clock,true);
+    }
+    // Diagnostic branch only. The legacy People endpoint is not authoritative
+    // even if its reported total equals the summary. No fallback count is returned.
+    private static String alternatePeopleProbe(Fetcher fetcher,String auth,long deadline,LongSupplier clock,int summary) {
+        try {
+            Response response=fetch(fetcher,ALTERNATIVE,"legacy",auth,deadline,clock);
+            Map<String,Object> root=object(parse(response.body(),deadline,clock),"legacy people object");
+            Object n=root.get("totalCount"), rows=root.get("people");
+            if(!(n instanceof NumberLiteral literal) || !COUNT.matcher(literal.text()).matches()
+                || !(rows instanceof List<?> list) || list.size()>1)
+                return "alternate-invalid-shape";
+            int total=Integer.parseInt(literal.text());
+            for(Object row:list) if(!(row instanceof Map<?,?>)) return "alternate-invalid-shape";
+            // Page size=1 cannot establish completeness. Compare metadata only.
+            root.clear();checkDeadline(deadline,clock);
+            return total==summary ? "alternate-total-matches" : "alternate-total-differs";
+        } catch(Exception error) {
+            if(error instanceof InterruptedException) Thread.currentThread().interrupt();
+            String category=failureCategory(error);
+            return Set.of("http-400","http-401","http-403","http-404","http-408","http-409",
+                "http-429","http-500","http-502","http-503","http-504","http-rejected",
+                "timeout","dns-unavailable","tls-failed","connection-failed","network-io",
+                "invalid-utf8","invalid-json","invalid-content-type","response-limits",
+                "redirect-blocked","pagination-unproven").contains(category)
+                ? category : "alternate-unavailable";
+        }
+    }
+    private static String capture(Fetcher fetcher,String auth,String nonce,Duration budget,LongSupplier clock,boolean alternative) throws Exception {
         if(fetcher==null||auth==null||auth.isBlank()||nonce==null||!NONCE.matcher(nonce).matches()
             ||budget==null||budget.isNegative()||budget.isZero()||clock==null)
             throw new IllegalArgumentException("invalid proof input");
         long deadline=clock.getAsLong()+budget.toNanos();
         int before=safeSummary(fetcher,auth,deadline,clock,"summary-before");
-        int count=safeFriends(fetcher,auth,deadline,clock);
+        int count;
+        try { count=safeFriends(fetcher,auth,deadline,clock); }
+        catch(StageFailure reason) {
+            // At most ONE additional GET and only for the observed PeopleHub
+            // HTTP 500. Never retry PeopleHub, enumerate pages, or admit a count.
+            if(alternative && "friends-fetch".equals(reason.stage) && "http-500".equals(reason.category))
+                throw new StageFailure("alternate-people",alternatePeopleProbe(fetcher,auth,deadline,clock,before));
+            throw reason;
+        }
         int after=safeSummary(fetcher,auth,deadline,clock,"summary-after");
         if(before!=after||before!=count) throw new StageFailure("crosscheck","count-mismatch");
         try { checkDeadline(deadline,clock); }
         catch(Exception error) { throw new StageFailure("crosscheck",failureCategory(error)); }
         return "MCGATEWAY_FRIEND_COUNT_V160_V2 nonce="+nonce+" count="+count+" before="+before+" after="+after+" complete=true pages=1";
     }
-    private static Response fetch(Fetcher f,URI uri,String contract,String auth,long deadline,LongSupplier clock) throws Exception { long remaining=deadline-clock.getAsLong(); if(remaining<=0) throw new IllegalStateException("capture timeout"); Response r=f.fetch(new Request(uri,contract,auth,Duration.ofNanos(remaining))); if(r==null) throw new IllegalStateException("HTTP failure"); if(r.statusCode()!=200) throw new SafeHttpStatusFailure(r.statusCode()); checkDeadline(deadline,clock); if(r.body()==null||r.body().getBytes(StandardCharsets.UTF_8).length>MAX_BODY) throw new IllegalStateException("oversize body"); boolean json=false; for(var h:r.headers().entrySet()){String n=normalize(h.getKey()); if(n.equals("contenttype"))for(String v:h.getValue())json|=v.matches("(?i)\\s*application/json(?:\\s*;\\s*charset=[a-z0-9._-]+)?\\s*"); if(n.equals("link")||Set.of("continuation","continuationtoken","next","nextlink","nextpage","nextpagelink","nextpagetoken","paging","paginginfo","pagination","hasmore","skiptoken","odatanextlink","totalpages").contains(n))throw new IllegalStateException("pagination header");} if(!json)throw new IllegalStateException("missing JSON content type"); return r; }
+    private static Response fetch(Fetcher f,URI uri,String contract,String auth,long deadline,LongSupplier clock) throws Exception { long remaining=deadline-clock.getAsLong(); if(remaining<=0) throw new IllegalStateException("capture timeout"); Response r=f.fetch(new Request(uri,contract,auth,Duration.ofNanos(remaining))); if(r==null) throw new IllegalStateException("HTTP failure"); if(r.statusCode()!=200) throw new SafeHttpStatusFailure(r.statusCode()); checkDeadline(deadline,clock); if(r.body()==null||r.body().getBytes(StandardCharsets.UTF_8).length>MAX_BODY) throw new IllegalStateException("oversize body"); boolean json=false; for(var h:r.headers().entrySet()){String n=normalize(h.getKey()); if(n.equals("contenttype"))for(String v:h.getValue())json|=v.matches("(?i)\\s*application/json(?:\\s*;\\s*charset=[a-z0-9._-]+)?\\s*"); if(!uri.equals(ALTERNATIVE) && (n.equals("link")||Set.of("continuation","continuationtoken","next","nextlink","nextpage","nextpagelink","nextpagetoken","paging","paginginfo","pagination","hasmore","skiptoken","odatanextlink","totalpages").contains(n)))throw new IllegalStateException("pagination header");} if(!json)throw new IllegalStateException("missing JSON content type"); return r; }
     private static int summary(Response r,long deadline,LongSupplier clock){Map<String,Object> root=object(parse(r.body(),deadline,clock),"summary object"); rejectContinuation(root,deadline,clock); Object v=root.get("targetFriendCount"); if(!(v instanceof NumberLiteral n)||!COUNT.matcher(n.text()).matches())throw new IllegalStateException("invalid targetFriendCount"); int count=Integer.parseInt(n.text()); root.clear(); checkDeadline(deadline,clock); return count;}
     private static int friends(Response r,long deadline,LongSupplier clock){Map<String,Object> root=object(parse(r.body(),deadline,clock),"friends object"); rejectContinuation(root,deadline,clock); rejectCollectionWindow(root,deadline,clock); Object raw=root.get("people"); if(!(raw instanceof List<?> people)||people.size()>MAX_ROWS)throw new IllegalStateException("invalid people snapshot"); Set<String> seen=new HashSet<>();int count=0;for(Object row:people){if((count&127)==0)checkDeadline(deadline,clock);Map<String,Object> p=object(row,"person");Object x=p.get("xuid"),fr=p.get("isFriend");if(!(x instanceof String id)||!validXuid(id)||!seen.add(id)||!(fr instanceof Boolean))throw new IllegalStateException("invalid friend row");if((Boolean)fr)count++;p.clear();}root.clear();checkDeadline(deadline,clock);return count;}
     private static boolean validXuid(String id){if(!XUID.matcher(id).matches())return false;try{Long.parseUnsignedLong(id);return true;}catch(NumberFormatException error){return false;}}
