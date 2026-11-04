@@ -14,6 +14,42 @@ V2_FRIEND_MANAGER = r'''
     private final java.util.Set<String> mcgatewayV2Nonces = new java.util.HashSet<>();
     private final HttpClient mcgatewayV2HttpClient = HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NEVER).connectTimeout(java.time.Duration.ofSeconds(8)).build();
     private record McgatewayV2State(String state, boolean removable) { }
+    private enum McgatewayV2StateDiagnostic {
+        INVALID_REQUEST("input", "invalid-request"), NONCE_REJECTED("input", "nonce-rejected"),
+        NORMAL_FRIEND_WORK_BUSY("lock", "normal-friend-work-busy"), SESSION_UNAVAILABLE("identity", "session-unavailable"),
+        IDENTITY_CHANGED("identity", "identity-changed"), TARGET_QUEUED("queue", "target-queued"),
+        TIMEOUT("transport", "timeout"), TRANSPORT("transport", "transport"), REDIRECT("response", "redirect"),
+        HTTP_400("response", "http-400"), HTTP_401("response", "http-401"), HTTP_403("response", "http-403"), HTTP_404("response", "http-404"),
+        HTTP_408("response", "http-408"), HTTP_409("response", "http-409"), HTTP_429("response", "http-429"), HTTP_500("response", "http-500"),
+        HTTP_502("response", "http-502"), HTTP_503("response", "http-503"), HTTP_504("response", "http-504"), HTTP_OTHER("response", "http-other"),
+        CONTENT_TYPE("response", "content-type"), HEADERS("response", "headers"), DATE("response", "date"), AGE("response", "age"),
+        BODY_LIMIT("body", "body-limit"), UTF8("body", "utf8"), JSON("parse", "json"), SCHEMA("parse", "schema"), INTERNAL("internal", "internal");
+        private final String stage, category;
+        McgatewayV2StateDiagnostic(String stage, String category) { this.stage = stage; this.category = category; }
+    }
+    private static final class McgatewayV2StateException extends Exception {
+        private final McgatewayV2StateDiagnostic diagnostic;
+        private McgatewayV2StateException(McgatewayV2StateDiagnostic diagnostic) { this.diagnostic = diagnostic; }
+    }
+    private static McgatewayV2StateException mcgatewayV2StateFail(McgatewayV2StateDiagnostic diagnostic) { return new McgatewayV2StateException(diagnostic); }
+    private static McgatewayV2StateDiagnostic mcgatewayV2StateDiagnostic(Throwable error) {
+        if (error instanceof McgatewayV2StateException typed) return typed.diagnostic;
+        if (error instanceof java.util.concurrent.TimeoutException) return McgatewayV2StateDiagnostic.TIMEOUT;
+        return McgatewayV2StateDiagnostic.INTERNAL;
+    }
+    private static McgatewayV2StateDiagnostic mcgatewayV2HttpDiagnostic(int status) {
+        return switch (status) {
+            case 400 -> McgatewayV2StateDiagnostic.HTTP_400; case 401 -> McgatewayV2StateDiagnostic.HTTP_401;
+            case 403 -> McgatewayV2StateDiagnostic.HTTP_403; case 404 -> McgatewayV2StateDiagnostic.HTTP_404;
+            case 408 -> McgatewayV2StateDiagnostic.HTTP_408; case 409 -> McgatewayV2StateDiagnostic.HTTP_409;
+            case 429 -> McgatewayV2StateDiagnostic.HTTP_429; case 500 -> McgatewayV2StateDiagnostic.HTTP_500;
+            case 502 -> McgatewayV2StateDiagnostic.HTTP_502; case 503 -> McgatewayV2StateDiagnostic.HTTP_503;
+            case 504 -> McgatewayV2StateDiagnostic.HTTP_504; default -> McgatewayV2StateDiagnostic.HTTP_OTHER;
+        };
+    }
+    private static String mcgatewayV2StateUnknown(String nonce, String target, String account, String session, McgatewayV2StateDiagnostic diagnostic) {
+        return "MCGATEWAY_FRIEND_STATE_V160_V2 nonce=" + nonce + " xuid=" + target + " account=" + account + " session=" + session + " state=unknown verified=false stage=" + diagnostic.stage + " category=" + diagnostic.category;
+    }
     private static boolean mcgatewayV2Nonce(String value) { return value != null && value.matches("[0-9a-f]{32}"); }
     private static boolean mcgatewayV2Xuid(String value) { return value != null && value.matches("[1-9][0-9]{0,19}"); }
     private boolean mcgatewayV2Consume(String nonce) {
@@ -29,13 +65,15 @@ V2_FRIEND_MANAGER = r'''
         StringBuilder out = new StringBuilder(64); for (byte b : bytes) out.append(String.format("%02x", b & 0xff)); return out.toString();
     }
     private static String mcgatewayV2Utf8(byte[] bytes) throws Exception {
-        if (bytes == null || bytes.length == 0 || bytes.length > MCGATEWAY_V2_MAX_BODY_BYTES) throw new IllegalStateException("body");
-        return java.nio.charset.StandardCharsets.UTF_8.newDecoder().onMalformedInput(java.nio.charset.CodingErrorAction.REPORT)
-            .onUnmappableCharacter(java.nio.charset.CodingErrorAction.REPORT).decode(java.nio.ByteBuffer.wrap(bytes)).toString();
+        if (bytes == null || bytes.length == 0 || bytes.length > MCGATEWAY_V2_MAX_BODY_BYTES) throw mcgatewayV2StateFail(McgatewayV2StateDiagnostic.BODY_LIMIT);
+        try {
+            return java.nio.charset.StandardCharsets.UTF_8.newDecoder().onMalformedInput(java.nio.charset.CodingErrorAction.REPORT)
+                .onUnmappableCharacter(java.nio.charset.CodingErrorAction.REPORT).decode(java.nio.ByteBuffer.wrap(bytes)).toString();
+        } catch (java.nio.charset.CharacterCodingException error) { throw mcgatewayV2StateFail(McgatewayV2StateDiagnostic.UTF8); }
     }
     private static long mcgatewayV2Remaining(long deadline) throws Exception {
         long remaining = java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(deadline - System.nanoTime());
-        if (remaining < 1L) throw new java.util.concurrent.TimeoutException("deadline");
+        if (remaining < 1L) throw mcgatewayV2StateFail(McgatewayV2StateDiagnostic.TIMEOUT);
         return remaining;
     }
     private static HttpResponse.BodyHandler<byte[]> mcgatewayV2BodyHandler() {
@@ -47,70 +85,94 @@ V2_FRIEND_MANAGER = r'''
             public void onSubscribe(java.util.concurrent.Flow.Subscription value) { subscription = value; value.request(Long.MAX_VALUE); }
             public void onNext(java.util.List<java.nio.ByteBuffer> chunks) {
                 if (result.isDone()) return;
-                try { for (java.nio.ByteBuffer chunk : chunks) { int count = chunk.remaining(); if (count > MCGATEWAY_V2_MAX_BODY_BYTES - bytes.size()) throw new IllegalStateException("body"); byte[] part = new byte[count]; chunk.get(part); bytes.write(part); } }
+                try { for (java.nio.ByteBuffer chunk : chunks) { int count = chunk.remaining(); if (count > MCGATEWAY_V2_MAX_BODY_BYTES - bytes.size()) throw mcgatewayV2StateFail(McgatewayV2StateDiagnostic.BODY_LIMIT); byte[] part = new byte[count]; chunk.get(part); bytes.write(part); } }
                 catch (Exception error) { subscription.cancel(); result.completeExceptionally(error); }
             }
-            public void onError(Throwable error) { result.completeExceptionally(error); }
+            public void onError(Throwable error) { result.completeExceptionally(mcgatewayV2StateFail(McgatewayV2StateDiagnostic.TRANSPORT)); }
             public void onComplete() { if (!result.isDone()) result.complete(bytes.toByteArray()); }
         };
     }
     private HttpResponse<byte[]> mcgatewayV2Send(HttpRequest request, long deadline) throws Exception {
-        java.util.concurrent.CompletableFuture<HttpResponse<byte[]>> future = mcgatewayV2HttpClient.sendAsync(request, mcgatewayV2BodyHandler());
+        java.util.concurrent.CompletableFuture<HttpResponse<byte[]>> future;
+        try { future = mcgatewayV2HttpClient.sendAsync(request, mcgatewayV2BodyHandler()); }
+        catch (Exception error) { throw mcgatewayV2StateFail(McgatewayV2StateDiagnostic.TRANSPORT); }
         try { return future.get(mcgatewayV2Remaining(deadline), java.util.concurrent.TimeUnit.MILLISECONDS); }
-        catch (java.util.concurrent.TimeoutException error) { future.cancel(true); throw error; }
+        catch (java.util.concurrent.TimeoutException error) { future.cancel(true); throw mcgatewayV2StateFail(McgatewayV2StateDiagnostic.TIMEOUT); }
+        catch (java.util.concurrent.ExecutionException error) {
+            Throwable cause = error.getCause();
+            if (cause instanceof McgatewayV2StateException typed) throw typed;
+            throw mcgatewayV2StateFail(McgatewayV2StateDiagnostic.TRANSPORT);
+        } catch (java.util.concurrent.CancellationException error) { throw mcgatewayV2StateFail(McgatewayV2StateDiagnostic.TRANSPORT); }
+        catch (InterruptedException error) { Thread.currentThread().interrupt(); throw mcgatewayV2StateFail(McgatewayV2StateDiagnostic.TRANSPORT); }
     }
     private static void mcgatewayV2Skip(com.google.gson.stream.JsonReader r, int depth) throws Exception {
-        if (depth > 8) throw new IllegalStateException("depth");
+        if (depth > 8) throw mcgatewayV2StateFail(McgatewayV2StateDiagnostic.JSON);
         switch (r.peek()) {
-            case BEGIN_OBJECT -> { java.util.Set<String> names = new java.util.HashSet<>(); r.beginObject(); while (r.hasNext()) { if (!names.add(r.nextName())) throw new IllegalStateException("duplicate"); mcgatewayV2Skip(r, depth + 1); } r.endObject(); }
-            case BEGIN_ARRAY -> { int count = 0; r.beginArray(); while (r.hasNext()) { if (++count > 64) throw new IllegalStateException("array"); mcgatewayV2Skip(r, depth + 1); } r.endArray(); }
-            case STRING -> { if (r.nextString().length() > 256) throw new IllegalStateException("string"); }
-            case NUMBER -> { if (r.nextString().length() > 64) throw new IllegalStateException("number"); }
+            case BEGIN_OBJECT -> { java.util.Set<String> names = new java.util.HashSet<>(); r.beginObject(); while (r.hasNext()) { if (!names.add(r.nextName())) throw mcgatewayV2StateFail(McgatewayV2StateDiagnostic.JSON); mcgatewayV2Skip(r, depth + 1); } r.endObject(); }
+            case BEGIN_ARRAY -> { int count = 0; r.beginArray(); while (r.hasNext()) { if (++count > 64) throw mcgatewayV2StateFail(McgatewayV2StateDiagnostic.JSON); mcgatewayV2Skip(r, depth + 1); } r.endArray(); }
+            case STRING -> { if (r.nextString().length() > 256) throw mcgatewayV2StateFail(McgatewayV2StateDiagnostic.JSON); }
+            case NUMBER -> { if (r.nextString().length() > 64) throw mcgatewayV2StateFail(McgatewayV2StateDiagnostic.JSON); }
             case BOOLEAN -> r.nextBoolean();
             case NULL -> r.nextNull();
-            default -> throw new IllegalStateException("token");
+            default -> throw mcgatewayV2StateFail(McgatewayV2StateDiagnostic.JSON);
         }
     }
     private static McgatewayV2State mcgatewayV2Parse(String body, String target) throws Exception {
-        com.google.gson.stream.JsonReader r = new com.google.gson.stream.JsonReader(new java.io.StringReader(body)); r.setLenient(false);
-        if (r.peek() != com.google.gson.stream.JsonToken.BEGIN_OBJECT) throw new IllegalStateException("root");
-        java.util.Set<String> names = new java.util.HashSet<>(); String xuid = null; Boolean friend = null, sent = null, received = null;
-        r.beginObject(); while (r.hasNext()) { String name = r.nextName(); if (!names.add(name)) throw new IllegalStateException("duplicate");
-            if (name.equals("xuid")) { if (r.peek() != com.google.gson.stream.JsonToken.STRING) throw new IllegalStateException("xuid"); xuid = r.nextString(); }
-            else if (name.equals("isFriend") || name.equals("friendRequestSent") || name.equals("friendRequestReceived")) {
-                if (r.peek() != com.google.gson.stream.JsonToken.BOOLEAN) throw new IllegalStateException("boolean"); Boolean v = r.nextBoolean();
-                if (name.equals("isFriend")) friend = v; else if (name.equals("friendRequestSent")) sent = v; else received = v;
-            } else mcgatewayV2Skip(r, 0);
-        } r.endObject();
-        if (r.peek() != com.google.gson.stream.JsonToken.END_DOCUMENT || !target.equals(xuid) || friend == null || sent == null || received == null) throw new IllegalStateException("incomplete");
-        return new McgatewayV2State(friend || sent || received ? "present" : "absent", friend && !sent && !received);
+        try {
+            com.google.gson.stream.JsonReader r = new com.google.gson.stream.JsonReader(new java.io.StringReader(body)); r.setLenient(false);
+            if (r.peek() != com.google.gson.stream.JsonToken.BEGIN_OBJECT) throw mcgatewayV2StateFail(McgatewayV2StateDiagnostic.SCHEMA);
+            java.util.Set<String> names = new java.util.HashSet<>(); String xuid = null; Boolean friend = null, sent = null, received = null;
+            r.beginObject(); while (r.hasNext()) { String name = r.nextName(); if (!names.add(name)) throw mcgatewayV2StateFail(McgatewayV2StateDiagnostic.SCHEMA);
+                if (name.equals("xuid")) { if (r.peek() != com.google.gson.stream.JsonToken.STRING) throw mcgatewayV2StateFail(McgatewayV2StateDiagnostic.SCHEMA); xuid = r.nextString(); }
+                else if (name.equals("isFriend") || name.equals("friendRequestSent") || name.equals("friendRequestReceived")) {
+                    if (r.peek() != com.google.gson.stream.JsonToken.BOOLEAN) throw mcgatewayV2StateFail(McgatewayV2StateDiagnostic.SCHEMA); Boolean v = r.nextBoolean();
+                    if (name.equals("isFriend")) friend = v; else if (name.equals("friendRequestSent")) sent = v; else received = v;
+                } else mcgatewayV2Skip(r, 0);
+            } r.endObject();
+            if (r.peek() != com.google.gson.stream.JsonToken.END_DOCUMENT || !target.equals(xuid) || friend == null || sent == null || received == null) throw mcgatewayV2StateFail(McgatewayV2StateDiagnostic.SCHEMA);
+            return new McgatewayV2State(friend || sent || received ? "present" : "absent", friend && !sent && !received);
+        } catch (McgatewayV2StateException error) { throw error; }
+        catch (Exception error) { throw mcgatewayV2StateFail(McgatewayV2StateDiagnostic.JSON); }
     }
     private McgatewayV2State mcgatewayV2Read(String target, String account, String session, long deadline) throws Exception {
-        if (toAdd.containsKey(target) || toRemove.containsKey(target)) throw new IllegalStateException("target-queued");
-        if (!account.equals(sessionManager.getXuid()) || !session.equals(sessionManager.mcgatewayV2SessionIdentity())) throw new IllegalStateException("identity-before");
+        if (toAdd.containsKey(target) || toRemove.containsKey(target)) throw mcgatewayV2StateFail(McgatewayV2StateDiagnostic.TARGET_QUEUED);
+        if (!account.equals(sessionManager.getXuid()) || !session.equals(sessionManager.mcgatewayV2SessionIdentity())) throw mcgatewayV2StateFail(McgatewayV2StateDiagnostic.IDENTITY_CHANGED);
         URI uri = URI.create(Constants.PEOPLE.formatted(target));
-        HttpRequest request = HttpRequest.newBuilder().uri(uri).timeout(java.time.Duration.ofMillis(Math.min(8_000L, mcgatewayV2Remaining(deadline)))).header("Authorization", sessionManager.getTokenHeader())
-            .header("x-xbl-contract-version", "3").header("Cache-Control", "no-cache").header("Pragma", "no-cache").GET().build();
+        HttpRequest request;
+        try { request = HttpRequest.newBuilder().uri(uri).timeout(java.time.Duration.ofMillis(Math.min(8_000L, mcgatewayV2Remaining(deadline)))).header("Authorization", sessionManager.getTokenHeader())
+            .header("x-xbl-contract-version", "3").header("Cache-Control", "no-cache").header("Pragma", "no-cache").GET().build(); }
+        catch (McgatewayV2StateException error) { throw error; }
+        catch (Exception error) { throw mcgatewayV2StateFail(McgatewayV2StateDiagnostic.TRANSPORT); }
         HttpResponse<byte[]> response = mcgatewayV2Send(request, deadline);
-        if (response.statusCode() != 200 || !uri.equals(response.uri())) throw new IllegalStateException("http");
+        if (!uri.equals(response.uri()) || (response.statusCode() >= 300 && response.statusCode() < 400)) throw mcgatewayV2StateFail(McgatewayV2StateDiagnostic.REDIRECT);
+        if (response.statusCode() != 200) throw mcgatewayV2StateFail(mcgatewayV2HttpDiagnostic(response.statusCode()));
         java.util.List<String> types = response.headers().allValues("Content-Type"), ages = response.headers().allValues("Age"), dates = response.headers().allValues("Date");
-        if (types.size() != 1 || ages.size() > 1 || dates.size() != 1) throw new IllegalStateException("headers");
+        if (types.size() != 1 || ages.size() > 1 || dates.size() != 1) throw mcgatewayV2StateFail(McgatewayV2StateDiagnostic.HEADERS);
         String type = types.get(0).split(";", 2)[0].trim().toLowerCase(java.util.Locale.ROOT); long age;
-        try { age = ages.isEmpty() ? 0L : Long.parseLong(ages.get(0)); } catch (Exception e) { throw new IllegalStateException("age"); }
+        try { age = ages.isEmpty() ? 0L : Long.parseLong(ages.get(0)); } catch (Exception e) { throw mcgatewayV2StateFail(McgatewayV2StateDiagnostic.AGE); }
         String date = dates.get(0); long dateMs;
-        try { dateMs = java.time.ZonedDateTime.parse(date, java.time.format.DateTimeFormatter.RFC_1123_DATE_TIME).toInstant().toEpochMilli(); } catch (Exception e) { throw new IllegalStateException("date"); }
-        if (!type.equals("application/json") || age != 0 || Math.abs(System.currentTimeMillis() - dateMs) > 60_000L || !account.equals(sessionManager.getXuid()) || !session.equals(sessionManager.mcgatewayV2SessionIdentity())) throw new IllegalStateException("freshness");
+        try { dateMs = java.time.ZonedDateTime.parse(date, java.time.format.DateTimeFormatter.RFC_1123_DATE_TIME).toInstant().toEpochMilli(); } catch (Exception e) { throw mcgatewayV2StateFail(McgatewayV2StateDiagnostic.DATE); }
+        if (!type.equals("application/json")) throw mcgatewayV2StateFail(McgatewayV2StateDiagnostic.CONTENT_TYPE);
+        if (age != 0) throw mcgatewayV2StateFail(McgatewayV2StateDiagnostic.AGE);
+        if (Math.abs(System.currentTimeMillis() - dateMs) > 60_000L) throw mcgatewayV2StateFail(McgatewayV2StateDiagnostic.DATE);
+        if (!account.equals(sessionManager.getXuid()) || !session.equals(sessionManager.mcgatewayV2SessionIdentity())) throw mcgatewayV2StateFail(McgatewayV2StateDiagnostic.IDENTITY_CHANGED);
         return mcgatewayV2Parse(mcgatewayV2Utf8(response.body()), target);
     }
     private String mcgatewayV2Failure(String marker, String nonce, String target, String account, String session, String pre) {
         return marker + " nonce=" + nonce + " xuid=" + target + " account=" + account + " session=" + session + " result=uncertain pre=" + pre + " post=unknown verified=false";
     }
     public String mcgatewayFriendStateV2(String nonce, String target) {
-        if (!mcgatewayV2Xuid(target) || !mcgatewayV2Consume(nonce)) return "MCGATEWAY_FRIEND_STATE_V160_V2 nonce=" + (mcgatewayV2Nonce(nonce) ? nonce : "invalid") + " xuid=" + (mcgatewayV2Xuid(target) ? target : "invalid") + " account=unavailable session=unavailable state=unknown verified=false";
-        if (!mcgatewayV2Lock.writeLock().tryLock()) return "MCGATEWAY_FRIEND_STATE_V160_V2 nonce=" + nonce + " xuid=" + target + " account=unavailable session=unavailable state=unknown verified=false";
-        try { long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(20); String account = sessionManager.getXuid(), rawSession = sessionManager.mcgatewayV2SessionIdentity(); String hash = mcgatewayV2Hash(account), session = mcgatewayV2Hash(rawSession);
+        String shownNonce = mcgatewayV2Nonce(nonce) ? nonce : "invalid", shownTarget = mcgatewayV2Xuid(target) ? target : "invalid";
+        if (!mcgatewayV2Nonce(nonce) || !mcgatewayV2Xuid(target)) return mcgatewayV2StateUnknown(shownNonce, shownTarget, "unavailable", "unavailable", McgatewayV2StateDiagnostic.INVALID_REQUEST);
+        if (!mcgatewayV2Consume(nonce)) return mcgatewayV2StateUnknown(nonce, target, "unavailable", "unavailable", McgatewayV2StateDiagnostic.NONCE_REJECTED);
+        if (!mcgatewayV2Lock.writeLock().tryLock()) return mcgatewayV2StateUnknown(nonce, target, "unavailable", "unavailable", McgatewayV2StateDiagnostic.NORMAL_FRIEND_WORK_BUSY);
+        String hash = "unavailable", session = "unavailable";
+        try {
+            long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(20); String account, rawSession;
+            try { account = sessionManager.getXuid(); rawSession = sessionManager.mcgatewayV2SessionIdentity(); hash = mcgatewayV2Hash(account); session = mcgatewayV2Hash(rawSession); }
+            catch (Exception error) { return mcgatewayV2StateUnknown(nonce, target, hash, session, McgatewayV2StateDiagnostic.SESSION_UNAVAILABLE); }
             McgatewayV2State state = mcgatewayV2Read(target, account, rawSession, deadline); return "MCGATEWAY_FRIEND_STATE_V160_V2 nonce=" + nonce + " xuid=" + target + " account=" + hash + " session=" + session + " state=" + state.state() + " verified=true";
-        } catch (Exception e) { return "MCGATEWAY_FRIEND_STATE_V160_V2 nonce=" + (mcgatewayV2Nonce(nonce) ? nonce : "invalid") + " xuid=" + (mcgatewayV2Xuid(target) ? target : "invalid") + " account=unavailable session=unavailable state=unknown verified=false"; }
+        } catch (Exception error) { return mcgatewayV2StateUnknown(nonce, target, hash, session, mcgatewayV2StateDiagnostic(error)); }
         finally { mcgatewayV2Lock.writeLock().unlock(); }
     }
     public String mcgatewayFriendRemoveV2(String nonce, String target) {
@@ -242,7 +304,7 @@ _logger_edit = list(EDITS[4])
 _logger_edit[3] = _logger_edit[3].replace(
     '                case "friends" -> warn("friends remove is DENIED: release160 removal contract requires a separate review.");',
     r'''                case "friendstatev160" -> {
-                    if (args.length != 2) warn("MCGATEWAY_FRIEND_STATE_V160_V2 nonce=invalid xuid=invalid account=unavailable session=unavailable state=unknown verified=false");
+                    if (args.length != 2) warn("MCGATEWAY_FRIEND_STATE_V160_V2 nonce=invalid xuid=invalid account=unavailable session=unavailable state=unknown verified=false stage=input category=invalid-request");
                     else info(StandaloneMain.sessionManager.friendManager().mcgatewayFriendStateV2(args[0], args[1]));
                 }
                 case "friendremovev160" -> {

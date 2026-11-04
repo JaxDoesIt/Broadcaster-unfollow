@@ -24,6 +24,22 @@ def main():
         workflow=PATCH.parent.parent/'.github/workflows/release160-friend-removal-v2-source.yml'
         check(all(item in friend for item in ('response.statusCode() != 200','missing people snapshot','incomplete paginated friend snapshot','invalid/duplicate friend identity or relationship','person.get("isFriend")')),'friend count guards missing')
         check('MCGATEWAY_FRIEND_REMOVE_V160_V2' in friend and 'MCGATEWAY_FRIEND_STATE_V160_V2' in friend,'v2 target receipts missing')
+        state_segment=friend[friend.index('private enum McgatewayV2StateDiagnostic'):friend.index('    public String mcgatewayFriendRemoveV2')]
+        diagnostics=('INVALID_REQUEST','NONCE_REJECTED','NORMAL_FRIEND_WORK_BUSY','SESSION_UNAVAILABLE','IDENTITY_CHANGED','TARGET_QUEUED','TIMEOUT','TRANSPORT','REDIRECT','HTTP_400','HTTP_401','HTTP_403','HTTP_404','HTTP_408','HTTP_409','HTTP_429','HTTP_500','HTTP_502','HTTP_503','HTTP_504','HTTP_OTHER','CONTENT_TYPE','HEADERS','DATE','AGE','BODY_LIMIT','UTF8','JSON','SCHEMA','INTERNAL')
+        check(all(item in state_segment for item in diagnostics),'closed GET diagnostic enum incomplete')
+        check('state=unknown verified=false stage=' in state_segment and 'mcgatewayV2HttpDiagnostic' in state_segment,'GET diagnostic frame/category mapping missing')
+        check('catch (Exception error) { return mcgatewayV2StateUnknown' in state_segment and 'catch (Throwable error)' not in state_segment,'GET diagnostics must not mask fatal JVM errors')
+        check('getMessage()' not in state_segment and 'error.toString' not in state_segment and '+ error' not in state_segment,'GET diagnostic leaks exception text')
+        check('throw mcgatewayV2StateFail(McgatewayV2StateDiagnostic.SCHEMA)' in state_segment and 'throw mcgatewayV2StateFail(McgatewayV2StateDiagnostic.JSON)' in state_segment,'GET duplicate/type/missing schema diagnostics absent')
+        proof=(PATCH.parent/'release160/FriendStateV2DiagnosticProof.java').read_text()
+        check(all(item in proof for item in ('for (Diagnostic diagnostic : Diagnostic.values())','token=secret','stage=internal category=internal','http-504')),'offline GET diagnostic proof incomplete')
+        workflow_text=workflow.read_text()
+        check('io.mcgateway.friend-state-diagnostics=1' in workflow_text and 'FriendStateV2DiagnosticProof.java' in workflow_text and ':core:mcgatewayFriendStateV2Diagnostics' in workflow_text,'diagnostic candidate image/proof gate missing')
+        current_patch=PATCH.read_text()
+        baseline_patch=subprocess.check_output(['git','show','HEAD:tools/apply_mcgateway_release160_patch.py'],cwd=PATCH.parent.parent,text=True)
+        remove_start='    public String mcgatewayFriendRemoveV2'
+        remove_end='    public void init(CoreConfig.FriendSyncConfig friendSyncConfig) {'
+        check(current_patch[current_patch.index(remove_start):current_patch.index(remove_end)] == baseline_patch[baseline_patch.index(remove_start):baseline_patch.index(remove_end)],'GET diagnostics must not alter V2 removal command source')
         check('ReentrantReadWriteLock mcgatewayV2Lock' in friend and 'mcgatewayV2Lock.writeLock().tryLock()' in friend and 'mcgatewayV2Lock.readLock().lock()' in friend and all(('MCGATEWAY_RELEASE160_V2_ADD_LOCK' in friend, 'MCGATEWAY_RELEASE160_V2_ADD_IF_REQUIRED_LOCK' in friend, 'MCGATEWAY_RELEASE160_V2_REMOVE_LOCK' in friend, 'MCGATEWAY_RELEASE160_V2_INTERNAL_LOCK' in friend)),'v2 mutation serialization missing')
         check('friendRequestSent' in friend and 'friendRequestReceived' in friend and 'response.statusCode() != 200' in friend,'strict target state guards missing')
         check('mcgatewayV2BodyHandler()' in friend and 'MCGATEWAY_V2_MAX_BODY_BYTES = 16 * 1024' in friend and 'future.cancel(true)' in friend,'v2 response/deadline bound missing')
@@ -35,7 +51,7 @@ def main():
         check('removeRelationship' not in friend and 'MCGATEWAY_TRANSFER_SUCCESS' not in relay,'invented legacy removal/success marker')
         check(all(item in core for item in ('MCGATEWAY_HEALTH_V160 initialized=','rta=','httpSignaling=','published=')),'health fields missing')
         check('MCGATEWAY_RELAY_IDENTITY_V1' in relay and 'MCGATEWAY_RELAY_SIGNALLED_V1' in relay,'relay markers missing')
-        check('friends remove is DENIED' in logger and 'friendstatev160' in logger and 'friendremovev160' in logger,'v2 command/default denial missing')
+        check('friends remove is DENIED' in logger and 'friendstatev160' in logger and 'friendremovev160' in logger and 'stage=input category=invalid-request' in logger,'v2 command/default denial missing')
         check('MCGATEWAY_RELEASE160_FRIEND_REMOVAL_MODE' in logger and 'owner-reviewed-v2' in logger,'v2 explicit feature mode missing')
         check('MCGATEWAY_FRIEND_COUNT_V160 count=' in logger and 'MCGATEWAY_FRIEND_COUNT_V160 ERROR unavailable' in logger,'structured friendcount console missing')
         manager=(root/'core/src/main/java/com/rtm516/mcxboxbroadcast/core/SessionManager.java').read_text()

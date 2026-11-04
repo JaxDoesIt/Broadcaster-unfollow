@@ -22,3 +22,9 @@ tasks.register<JavaExec>("mcgatewayFriendRemovalV2Interleaving") {
     mainClass.set("com.rtm516.mcxboxbroadcast.core.FriendRemovalV2InterleavingProof")
     maxHeapSize = "256m"
 }
+tasks.register<JavaExec>("mcgatewayFriendStateV2Diagnostics") {
+    dependsOn(mcgatewayProof.classesTaskName)
+    classpath = mcgatewayProof.runtimeClasspath
+    mainClass.set("com.rtm516.mcxboxbroadcast.core.FriendStateV2DiagnosticProof")
+    maxHeapSize = "256m"
+}
