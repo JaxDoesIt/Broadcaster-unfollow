@@ -10,13 +10,19 @@ V2_FRIEND_MANAGER = r'''
     private static final int MCGATEWAY_V2_MAX_BODY_BYTES = 16 * 1024;
     private static final int MCGATEWAY_V2_MAX_NONCES = 256;
     private final java.util.concurrent.locks.ReentrantLock mcgatewayV2Lock = new java.util.concurrent.locks.ReentrantLock();
+    private final Object mcgatewayV2NonceLock = new Object();
     private final java.util.Set<String> mcgatewayV2Nonces = new java.util.HashSet<>();
+    private final HttpClient mcgatewayV2HttpClient = HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NEVER).connectTimeout(java.time.Duration.ofSeconds(8)).build();
     private record McgatewayV2State(String state, boolean removable) { }
     private static boolean mcgatewayV2Nonce(String value) { return value != null && value.matches("[0-9a-f]{32}"); }
     private static boolean mcgatewayV2Xuid(String value) { return value != null && value.matches("[1-9][0-9]{0,19}"); }
     private boolean mcgatewayV2Consume(String nonce) {
-        if (!mcgatewayV2Nonce(nonce) || mcgatewayV2Nonces.contains(nonce) || mcgatewayV2Nonces.size() >= MCGATEWAY_V2_MAX_NONCES) return false;
-        mcgatewayV2Nonces.add(nonce); return true;
+        // Deliberately memory-only: the controller owns durable command intent.
+        // Never evict a nonce; capacity exhaustion fails closed.
+        synchronized (mcgatewayV2NonceLock) {
+            if (!mcgatewayV2Nonce(nonce) || mcgatewayV2Nonces.contains(nonce) || mcgatewayV2Nonces.size() >= MCGATEWAY_V2_MAX_NONCES) return false;
+            mcgatewayV2Nonces.add(nonce); return true;
+        }
     }
     private static String mcgatewayV2Hash(String value) throws Exception {
         byte[] bytes = java.security.MessageDigest.getInstance("SHA-256").digest(value.getBytes(java.nio.charset.StandardCharsets.UTF_8));
@@ -49,7 +55,7 @@ V2_FRIEND_MANAGER = r'''
         };
     }
     private HttpResponse<byte[]> mcgatewayV2Send(HttpRequest request, long deadline) throws Exception {
-        java.util.concurrent.CompletableFuture<HttpResponse<byte[]>> future = httpClient.sendAsync(request, mcgatewayV2BodyHandler());
+        java.util.concurrent.CompletableFuture<HttpResponse<byte[]>> future = mcgatewayV2HttpClient.sendAsync(request, mcgatewayV2BodyHandler());
         try { return future.get(mcgatewayV2Remaining(deadline), java.util.concurrent.TimeUnit.MILLISECONDS); }
         catch (java.util.concurrent.TimeoutException error) { future.cancel(true); throw error; }
     }
@@ -87,34 +93,38 @@ V2_FRIEND_MANAGER = r'''
             .header("x-xbl-contract-version", "3").header("Cache-Control", "no-cache").header("Pragma", "no-cache").GET().build();
         HttpResponse<byte[]> response = mcgatewayV2Send(request, deadline);
         if (response.statusCode() != 200 || !uri.equals(response.uri())) throw new IllegalStateException("http");
-        String type = response.headers().firstValue("Content-Type").orElse("").toLowerCase(java.util.Locale.ROOT);
-        long age = response.headers().firstValue("Age").map(v -> { try { return Long.parseLong(v); } catch (Exception e) { return -1L; } }).orElse(0L);
-        String date = response.headers().firstValue("Date").orElse(""); long dateMs;
+        java.util.List<String> types = response.headers().allValues("Content-Type"), ages = response.headers().allValues("Age"), dates = response.headers().allValues("Date");
+        if (types.size() != 1 || ages.size() != 1 || dates.size() != 1) throw new IllegalStateException("headers");
+        String type = types.get(0).split(";", 2)[0].trim().toLowerCase(java.util.Locale.ROOT); long age;
+        try { age = Long.parseLong(ages.get(0)); } catch (Exception e) { throw new IllegalStateException("age"); }
+        String date = dates.get(0); long dateMs;
         try { dateMs = java.time.ZonedDateTime.parse(date, java.time.format.DateTimeFormatter.RFC_1123_DATE_TIME).toInstant().toEpochMilli(); } catch (Exception e) { throw new IllegalStateException("date"); }
-        if (!type.startsWith("application/json") || age != 0 || Math.abs(System.currentTimeMillis() - dateMs) > 60_000L || !account.equals(sessionManager.getXuid()) || !session.equals(sessionManager.mcgatewayV2SessionIdentity())) throw new IllegalStateException("freshness");
+        if (!type.equals("application/json") || age != 0 || Math.abs(System.currentTimeMillis() - dateMs) > 60_000L || !account.equals(sessionManager.getXuid()) || !session.equals(sessionManager.mcgatewayV2SessionIdentity())) throw new IllegalStateException("freshness");
         return mcgatewayV2Parse(mcgatewayV2Utf8(response.body()), target);
     }
     private String mcgatewayV2Failure(String marker, String nonce, String target, String account, String session, String pre) {
         return marker + " nonce=" + nonce + " xuid=" + target + " account=" + account + " session=" + session + " result=uncertain pre=" + pre + " post=unknown verified=false";
     }
     public String mcgatewayFriendStateV2(String nonce, String target) {
-        if (!mcgatewayV2Lock.tryLock()) return "MCGATEWAY_FRIEND_STATE_V160_V2 nonce=invalid xuid=invalid account=unavailable session=unavailable state=unknown verified=false";
-        try { if (!mcgatewayV2Consume(nonce) || !mcgatewayV2Xuid(target)) throw new IllegalStateException("input"); long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(20); String account = sessionManager.getXuid(), rawSession = sessionManager.mcgatewayV2SessionIdentity(); String hash = mcgatewayV2Hash(account), session = mcgatewayV2Hash(rawSession);
+        if (!mcgatewayV2Xuid(target) || !mcgatewayV2Consume(nonce)) return "MCGATEWAY_FRIEND_STATE_V160_V2 nonce=" + (mcgatewayV2Nonce(nonce) ? nonce : "invalid") + " xuid=" + (mcgatewayV2Xuid(target) ? target : "invalid") + " account=unavailable session=unavailable state=unknown verified=false";
+        if (!mcgatewayV2Lock.tryLock()) return "MCGATEWAY_FRIEND_STATE_V160_V2 nonce=" + nonce + " xuid=" + target + " account=unavailable session=unavailable state=unknown verified=false";
+        try { long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(20); String account = sessionManager.getXuid(), rawSession = sessionManager.mcgatewayV2SessionIdentity(); String hash = mcgatewayV2Hash(account), session = mcgatewayV2Hash(rawSession);
             McgatewayV2State state = mcgatewayV2Read(target, account, rawSession, deadline); return "MCGATEWAY_FRIEND_STATE_V160_V2 nonce=" + nonce + " xuid=" + target + " account=" + hash + " session=" + session + " state=" + state.state() + " verified=true";
         } catch (Exception e) { return "MCGATEWAY_FRIEND_STATE_V160_V2 nonce=" + (mcgatewayV2Nonce(nonce) ? nonce : "invalid") + " xuid=" + (mcgatewayV2Xuid(target) ? target : "invalid") + " account=unavailable session=unavailable state=unknown verified=false"; }
         finally { mcgatewayV2Lock.unlock(); }
     }
     public String mcgatewayFriendRemoveV2(String nonce, String target) {
-        if (!mcgatewayV2Lock.tryLock()) return "MCGATEWAY_FRIEND_REMOVE_V160_V2 nonce=invalid xuid=invalid account=unavailable session=unavailable result=uncertain pre=unknown post=unknown verified=false";
+        if (!mcgatewayV2Xuid(target) || !mcgatewayV2Consume(nonce)) return "MCGATEWAY_FRIEND_REMOVE_V160_V2 nonce=" + (mcgatewayV2Nonce(nonce) ? nonce : "invalid") + " xuid=" + (mcgatewayV2Xuid(target) ? target : "invalid") + " account=unavailable session=unavailable result=uncertain pre=unknown post=unknown verified=false";
+        if (!mcgatewayV2Lock.tryLock()) return "MCGATEWAY_FRIEND_REMOVE_V160_V2 nonce=" + nonce + " xuid=" + target + " account=unavailable session=unavailable result=uncertain pre=unknown post=unknown verified=false";
         String account = "unavailable", session = "unavailable", pre = "unknown";
-        try { if (!mcgatewayV2Consume(nonce) || !mcgatewayV2Xuid(target)) throw new IllegalStateException("input"); long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(20); String raw = sessionManager.getXuid(), rawSession = sessionManager.mcgatewayV2SessionIdentity(); account = mcgatewayV2Hash(raw); session = mcgatewayV2Hash(rawSession);
+        try { long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(20); String raw = sessionManager.getXuid(), rawSession = sessionManager.mcgatewayV2SessionIdentity(); account = mcgatewayV2Hash(raw); session = mcgatewayV2Hash(rawSession);
             McgatewayV2State before = mcgatewayV2Read(target, raw, rawSession, deadline); pre = before.state();
             if (pre.equals("absent")) return "MCGATEWAY_FRIEND_REMOVE_V160_V2 nonce=" + nonce + " xuid=" + target + " account=" + account + " session=" + session + " result=already-absent pre=absent post=absent verified=true";
             if (!before.removable()) throw new IllegalStateException("pending");
-            if (!raw.equals(sessionManager.getXuid()) || !rawSession.equals(sessionManager.mcgatewayV2SessionIdentity())) throw new IllegalStateException("identity-before-delete");
-            HttpRequest request = HttpRequest.newBuilder().uri(URI.create(Constants.FRIEND.formatted(target))).timeout(java.time.Duration.ofMillis(Math.min(8_000L, mcgatewayV2Remaining(deadline)))).header("Authorization", sessionManager.getTokenHeader()).DELETE().build();
+            if (toAdd.containsKey(target) || toRemove.containsKey(target) || !raw.equals(sessionManager.getXuid()) || !rawSession.equals(sessionManager.mcgatewayV2SessionIdentity())) throw new IllegalStateException("identity-before-delete");
+            URI uri = URI.create(Constants.FRIEND.formatted(target)); HttpRequest request = HttpRequest.newBuilder().uri(uri).timeout(java.time.Duration.ofMillis(Math.min(8_000L, mcgatewayV2Remaining(deadline)))).header("Authorization", sessionManager.getTokenHeader()).DELETE().build();
             HttpResponse<byte[]> deleted = mcgatewayV2Send(request, deadline);
-            if ((deleted.statusCode() != 200 && deleted.statusCode() != 204) || !raw.equals(sessionManager.getXuid()) || !rawSession.equals(sessionManager.mcgatewayV2SessionIdentity())) throw new IllegalStateException("delete");
+            if ((deleted.statusCode() != 200 && deleted.statusCode() != 204) || !uri.equals(deleted.uri()) || !raw.equals(sessionManager.getXuid()) || !rawSession.equals(sessionManager.mcgatewayV2SessionIdentity())) throw new IllegalStateException("delete");
             McgatewayV2State after = mcgatewayV2Read(target, raw, rawSession, deadline); if (!after.state().equals("absent")) throw new IllegalStateException("post");
             return "MCGATEWAY_FRIEND_REMOVE_V160_V2 nonce=" + nonce + " xuid=" + target + " account=" + account + " session=" + session + " result=removed pre=present post=absent verified=true";
         } catch (Exception e) { return mcgatewayV2Failure("MCGATEWAY_FRIEND_REMOVE_V160_V2", mcgatewayV2Nonce(nonce) ? nonce : "invalid", mcgatewayV2Xuid(target) ? target : "invalid", account, session, pre); }
@@ -244,14 +254,22 @@ _logger_edit[3] = _logger_edit[3].replace(
 )
 EDITS[4] = tuple(_logger_edit)
 
-def wrap_v2_internal_process(text):
-    """Serialize the existing scheduled mutation worker with the V2 operation.
+V2_SERIALIZED_METHODS = (
+    ('    public void add(String xuid, String gamertag) {', 'ADD_LOCK'),
+    ('    public boolean addIfRequired(String xuid, String gamertag) {', 'ADD_IF_REQUIRED_LOCK'),
+    ('    public void remove(String xuid, String gamertag) {', 'REMOVE_LOCK'),
+    ('    private void internalProcess() {', 'INTERNAL_LOCK'),
+)
 
-    V2 admission never waits for that worker: it uses tryLock and fails closed.
-    The normal worker may wait at most the V2 bounded three-request budget.
+def wrap_v2_method(text, signature, marker):
+    """Serialize every normal mutation decision with V2's target proof.
+
+    The V2 command uses tryLock and never waits. Normal code can wait for only
+    V2's fixed 20-second overall request budget. In particular,
+    addIfRequired's target-state GET cannot race V2's DELETE.
     """
-    signature = '    private void internalProcess() {'
-    if 'MCGATEWAY_RELEASE160_V2_INTERNAL_LOCK' in text:
+    marker_line = 'MCGATEWAY_RELEASE160_V2_' + marker
+    if marker_line in text:
         return text
     start = text.find(signature)
     if start < 0:
@@ -268,10 +286,8 @@ def wrap_v2_internal_process(text):
                 break
     if end is None:
         raise ValueError('unclosed internal process')
-    prefix = '''    private void internalProcess() {
-        // MCGATEWAY_RELEASE160_V2_INTERNAL_LOCK: queued normal mutations never
-        // run concurrently with a V2 proof. This worker is allowed to wait only
-        // for V2's fixed request budget; V2 itself never waits here.
+    prefix = signature + '\n' + '''        // ''' + marker_line + ''': normal friend decisions never run
+        // concurrently with a V2 proof; V2 itself never waits here.
         mcgatewayV2Lock.lock();
         try {'''
     return text[:start] + prefix + text[open_brace + 1:end] + '''        } finally {
@@ -279,22 +295,28 @@ def wrap_v2_internal_process(text):
         }
 ''' + text[end:]
 
-def unwrap_v2_internal_process(text):
-    prefix = '''    private void internalProcess() {
-        // MCGATEWAY_RELEASE160_V2_INTERNAL_LOCK: queued normal mutations never
-        // run concurrently with a V2 proof. This worker is allowed to wait only
-        // for V2's fixed request budget; V2 itself never waits here.
-        mcgatewayV2Lock.lock();
-        try {'''
+def wrap_v2_serialized_methods(text):
+    for signature, marker in V2_SERIALIZED_METHODS:
+        text = wrap_v2_method(text, signature, marker)
+    return text
+
+def unwrap_v2_serialized_methods(text):
     suffix = '''        } finally {
             mcgatewayV2Lock.unlock();
         }
 '''
-    if prefix not in text:
-        return text
-    start = text.index(prefix)
-    close = text.index(suffix, start + len(prefix))
-    return text[:start] + '    private void internalProcess() {' + text[start + len(prefix):close] + text[close + len(suffix):]
+    for signature, marker in reversed(V2_SERIALIZED_METHODS):
+        marker_line = 'MCGATEWAY_RELEASE160_V2_' + marker
+        if marker_line not in text:
+            continue
+        prefix = signature + '\n' + '''        // ''' + marker_line + ''': normal friend decisions never run
+        // concurrently with a V2 proof; V2 itself never waits here.
+        mcgatewayV2Lock.lock();
+        try {'''
+        start = text.index(prefix)
+        close = text.index(suffix, start + len(prefix))
+        text = text[:start] + signature + text[start + len(prefix):close] + text[close + len(suffix):]
+    return text
 
 def matches_original_hash(text, source_hash):
     raw = text.encode('utf-8')
@@ -313,7 +335,7 @@ def apply(root):
         if path.is_symlink() or not path.is_file():
             raise ValueError('missing/unsafe source: ' + relative)
         current = path.read_text(encoding='utf-8')
-        comparable = unwrap_v2_internal_process(current) if relative.endswith('/FriendManager.java') else current
+        comparable = unwrap_v2_serialized_methods(current) if relative.endswith('/FriendManager.java') else current
         if matches_original_hash(current, original_hash):
             original = current
         elif comparable.count(replacement) == 1:
@@ -326,7 +348,7 @@ def apply(root):
             raise ValueError('ambiguous source anchor: ' + relative)
         expected = original.replace(anchor, replacement, 1)
         if relative.endswith('/FriendManager.java'):
-            expected = wrap_v2_internal_process(expected)
+            expected = wrap_v2_serialized_methods(expected)
         if current not in (original, expected):
             raise ValueError('unexpected patched source: ' + relative)
         prepared.append((path, current, expected))
