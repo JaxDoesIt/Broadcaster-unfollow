@@ -9,7 +9,7 @@ V2_FRIEND_MANAGER = r'''
     // MCGATEWAY_RELEASE160_FRIEND_REMOVE_V2: strict, target-scoped proof.
     private static final int MCGATEWAY_V2_MAX_BODY_BYTES = 16 * 1024;
     private static final int MCGATEWAY_V2_MAX_NONCES = 256;
-    private final java.util.concurrent.locks.ReentrantLock mcgatewayV2Lock = new java.util.concurrent.locks.ReentrantLock();
+    private final java.util.concurrent.locks.ReentrantReadWriteLock mcgatewayV2Lock = new java.util.concurrent.locks.ReentrantReadWriteLock();
     private final Object mcgatewayV2NonceLock = new Object();
     private final java.util.Set<String> mcgatewayV2Nonces = new java.util.HashSet<>();
     private final HttpClient mcgatewayV2HttpClient = HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NEVER).connectTimeout(java.time.Duration.ofSeconds(8)).build();
@@ -94,9 +94,9 @@ V2_FRIEND_MANAGER = r'''
         HttpResponse<byte[]> response = mcgatewayV2Send(request, deadline);
         if (response.statusCode() != 200 || !uri.equals(response.uri())) throw new IllegalStateException("http");
         java.util.List<String> types = response.headers().allValues("Content-Type"), ages = response.headers().allValues("Age"), dates = response.headers().allValues("Date");
-        if (types.size() != 1 || ages.size() != 1 || dates.size() != 1) throw new IllegalStateException("headers");
+        if (types.size() != 1 || ages.size() > 1 || dates.size() != 1) throw new IllegalStateException("headers");
         String type = types.get(0).split(";", 2)[0].trim().toLowerCase(java.util.Locale.ROOT); long age;
-        try { age = Long.parseLong(ages.get(0)); } catch (Exception e) { throw new IllegalStateException("age"); }
+        try { age = ages.isEmpty() ? 0L : Long.parseLong(ages.get(0)); } catch (Exception e) { throw new IllegalStateException("age"); }
         String date = dates.get(0); long dateMs;
         try { dateMs = java.time.ZonedDateTime.parse(date, java.time.format.DateTimeFormatter.RFC_1123_DATE_TIME).toInstant().toEpochMilli(); } catch (Exception e) { throw new IllegalStateException("date"); }
         if (!type.equals("application/json") || age != 0 || Math.abs(System.currentTimeMillis() - dateMs) > 60_000L || !account.equals(sessionManager.getXuid()) || !session.equals(sessionManager.mcgatewayV2SessionIdentity())) throw new IllegalStateException("freshness");
@@ -107,15 +107,15 @@ V2_FRIEND_MANAGER = r'''
     }
     public String mcgatewayFriendStateV2(String nonce, String target) {
         if (!mcgatewayV2Xuid(target) || !mcgatewayV2Consume(nonce)) return "MCGATEWAY_FRIEND_STATE_V160_V2 nonce=" + (mcgatewayV2Nonce(nonce) ? nonce : "invalid") + " xuid=" + (mcgatewayV2Xuid(target) ? target : "invalid") + " account=unavailable session=unavailable state=unknown verified=false";
-        if (!mcgatewayV2Lock.tryLock()) return "MCGATEWAY_FRIEND_STATE_V160_V2 nonce=" + nonce + " xuid=" + target + " account=unavailable session=unavailable state=unknown verified=false";
+        if (!mcgatewayV2Lock.writeLock().tryLock()) return "MCGATEWAY_FRIEND_STATE_V160_V2 nonce=" + nonce + " xuid=" + target + " account=unavailable session=unavailable state=unknown verified=false";
         try { long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(20); String account = sessionManager.getXuid(), rawSession = sessionManager.mcgatewayV2SessionIdentity(); String hash = mcgatewayV2Hash(account), session = mcgatewayV2Hash(rawSession);
             McgatewayV2State state = mcgatewayV2Read(target, account, rawSession, deadline); return "MCGATEWAY_FRIEND_STATE_V160_V2 nonce=" + nonce + " xuid=" + target + " account=" + hash + " session=" + session + " state=" + state.state() + " verified=true";
         } catch (Exception e) { return "MCGATEWAY_FRIEND_STATE_V160_V2 nonce=" + (mcgatewayV2Nonce(nonce) ? nonce : "invalid") + " xuid=" + (mcgatewayV2Xuid(target) ? target : "invalid") + " account=unavailable session=unavailable state=unknown verified=false"; }
-        finally { mcgatewayV2Lock.unlock(); }
+        finally { mcgatewayV2Lock.writeLock().unlock(); }
     }
     public String mcgatewayFriendRemoveV2(String nonce, String target) {
         if (!mcgatewayV2Xuid(target) || !mcgatewayV2Consume(nonce)) return "MCGATEWAY_FRIEND_REMOVE_V160_V2 nonce=" + (mcgatewayV2Nonce(nonce) ? nonce : "invalid") + " xuid=" + (mcgatewayV2Xuid(target) ? target : "invalid") + " account=unavailable session=unavailable result=uncertain pre=unknown post=unknown verified=false";
-        if (!mcgatewayV2Lock.tryLock()) return "MCGATEWAY_FRIEND_REMOVE_V160_V2 nonce=" + nonce + " xuid=" + target + " account=unavailable session=unavailable result=uncertain pre=unknown post=unknown verified=false";
+        if (!mcgatewayV2Lock.writeLock().tryLock()) return "MCGATEWAY_FRIEND_REMOVE_V160_V2 nonce=" + nonce + " xuid=" + target + " account=unavailable session=unavailable result=uncertain pre=unknown post=unknown verified=false";
         String account = "unavailable", session = "unavailable", pre = "unknown";
         try { long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(20); String raw = sessionManager.getXuid(), rawSession = sessionManager.mcgatewayV2SessionIdentity(); account = mcgatewayV2Hash(raw); session = mcgatewayV2Hash(rawSession);
             McgatewayV2State before = mcgatewayV2Read(target, raw, rawSession, deadline); pre = before.state();
@@ -128,7 +128,7 @@ V2_FRIEND_MANAGER = r'''
             McgatewayV2State after = mcgatewayV2Read(target, raw, rawSession, deadline); if (!after.state().equals("absent")) throw new IllegalStateException("post");
             return "MCGATEWAY_FRIEND_REMOVE_V160_V2 nonce=" + nonce + " xuid=" + target + " account=" + account + " session=" + session + " result=removed pre=present post=absent verified=true";
         } catch (Exception e) { return mcgatewayV2Failure("MCGATEWAY_FRIEND_REMOVE_V160_V2", mcgatewayV2Nonce(nonce) ? nonce : "invalid", mcgatewayV2Xuid(target) ? target : "invalid", account, session, pre); }
-        finally { mcgatewayV2Lock.unlock(); }
+        finally { mcgatewayV2Lock.writeLock().unlock(); }
     }
 
 '''
@@ -264,8 +264,9 @@ V2_SERIALIZED_METHODS = (
 def wrap_v2_method(text, signature, marker):
     """Serialize every normal mutation decision with V2's target proof.
 
-    The V2 command uses tryLock and never waits. Normal code can wait for only
-    V2's fixed 20-second overall request budget. In particular,
+    The V2 command uses writeLock.tryLock and never waits. Normal mutations
+    retain their original parallelism under the shared read lock; only V2 is
+    exclusive for its fixed 20-second overall request budget. In particular,
     addIfRequired's target-state GET cannot race V2's DELETE.
     """
     marker_line = 'MCGATEWAY_RELEASE160_V2_' + marker
@@ -288,10 +289,10 @@ def wrap_v2_method(text, signature, marker):
         raise ValueError('unclosed internal process')
     prefix = signature + '\n' + '''        // ''' + marker_line + ''': normal friend decisions never run
         // concurrently with a V2 proof; V2 itself never waits here.
-        mcgatewayV2Lock.lock();
+        mcgatewayV2Lock.readLock().lock();
         try {'''
     return text[:start] + prefix + text[open_brace + 1:end] + '''        } finally {
-            mcgatewayV2Lock.unlock();
+            mcgatewayV2Lock.readLock().unlock();
         }
 ''' + text[end:]
 
@@ -302,7 +303,7 @@ def wrap_v2_serialized_methods(text):
 
 def unwrap_v2_serialized_methods(text):
     suffix = '''        } finally {
-            mcgatewayV2Lock.unlock();
+            mcgatewayV2Lock.readLock().unlock();
         }
 '''
     for signature, marker in reversed(V2_SERIALIZED_METHODS):
@@ -311,7 +312,7 @@ def unwrap_v2_serialized_methods(text):
             continue
         prefix = signature + '\n' + '''        // ''' + marker_line + ''': normal friend decisions never run
         // concurrently with a V2 proof; V2 itself never waits here.
-        mcgatewayV2Lock.lock();
+        mcgatewayV2Lock.readLock().lock();
         try {'''
         start = text.index(prefix)
         close = text.index(suffix, start + len(prefix))
