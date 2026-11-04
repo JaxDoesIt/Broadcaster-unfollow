@@ -81,6 +81,7 @@ V2_FRIEND_MANAGER = r'''
     }
     private McgatewayV2State mcgatewayV2Read(String target, String account, String session, long deadline) throws Exception {
         if (toAdd.containsKey(target) || toRemove.containsKey(target)) throw new IllegalStateException("target-queued");
+        if (!account.equals(sessionManager.getXuid()) || !session.equals(sessionManager.mcgatewayV2SessionIdentity())) throw new IllegalStateException("identity-before");
         URI uri = URI.create(Constants.PEOPLE.formatted(target));
         HttpRequest request = HttpRequest.newBuilder().uri(uri).timeout(java.time.Duration.ofMillis(Math.min(8_000L, mcgatewayV2Remaining(deadline)))).header("Authorization", sessionManager.getTokenHeader())
             .header("x-xbl-contract-version", "3").header("Cache-Control", "no-cache").header("Pragma", "no-cache").GET().build();
@@ -110,6 +111,7 @@ V2_FRIEND_MANAGER = r'''
             McgatewayV2State before = mcgatewayV2Read(target, raw, rawSession, deadline); pre = before.state();
             if (pre.equals("absent")) return "MCGATEWAY_FRIEND_REMOVE_V160_V2 nonce=" + nonce + " xuid=" + target + " account=" + account + " session=" + session + " result=already-absent pre=absent post=absent verified=true";
             if (!before.removable()) throw new IllegalStateException("pending");
+            if (!raw.equals(sessionManager.getXuid()) || !rawSession.equals(sessionManager.mcgatewayV2SessionIdentity())) throw new IllegalStateException("identity-before-delete");
             HttpRequest request = HttpRequest.newBuilder().uri(URI.create(Constants.FRIEND.formatted(target))).timeout(java.time.Duration.ofMillis(Math.min(8_000L, mcgatewayV2Remaining(deadline)))).header("Authorization", sessionManager.getTokenHeader()).DELETE().build();
             HttpResponse<byte[]> deleted = mcgatewayV2Send(request, deadline);
             if ((deleted.statusCode() != 200 && deleted.statusCode() != 204) || !raw.equals(sessionManager.getXuid()) || !rawSession.equals(sessionManager.mcgatewayV2SessionIdentity())) throw new IllegalStateException("delete");

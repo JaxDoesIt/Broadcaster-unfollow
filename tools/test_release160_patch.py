@@ -29,7 +29,7 @@ def main():
         check('mcgatewayV2Skip' in friend and 'if (depth > 8)' in friend and 'if (++count > 64)' in friend and 'if (!names.add(r.nextName()))' in friend,'v2 JSON depth/duplicate bounds missing')
         check('TimeUnit.SECONDS.toNanos(20)' in friend and 'Math.min(8_000L, mcgatewayV2Remaining(deadline))' in friend,'absolute/individual request budgets missing')
         check('DateTimeFormatter.RFC_1123_DATE_TIME' in friend and 'Cache-Control", "no-cache' in friend,'freshness fencing missing')
-        check('mcgatewayV2SessionIdentity' in friend and 'mcgatewayV2Hash(rawSession)' in friend,'session binding missing')
+        check('mcgatewayV2SessionIdentity' in friend and 'mcgatewayV2Hash(rawSession)' in friend and 'identity-before-delete' in friend,'session binding missing')
         check('lastFriendCache.removeIf' not in friend[friend.index('MCGATEWAY_RELEASE160_FRIEND_REMOVE_V2'):friend.index('    public void init')],'v2 code mutates cache')
         check('removeRelationship' not in friend and 'MCGATEWAY_TRANSFER_SUCCESS' not in relay,'invented legacy removal/success marker')
         check(all(item in core for item in ('MCGATEWAY_HEALTH_V160 initialized=','rta=','httpSignaling=','published=')),'health fields missing')
