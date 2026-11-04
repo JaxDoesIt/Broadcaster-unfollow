@@ -1,0 +1,90 @@
+name: Release160 friend removal V2 source candidate
+
+on:
+  push:
+    branches: [fix/release160-cleanup-functional-2026-11-04]
+    paths:
+      - '.github/workflows/release160-friend-removal-v2-source.yml'
+      - 'tools/apply_mcgateway_release160_patch.py'
+      - 'tools/test_release160_patch.py'
+      - 'tools/release160/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: release160-friend-removal-v2-source
+  cancel-in-progress: false
+
+jobs:
+  candidate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      UPSTREAM_SHA: 798d8b3a6107359643b525f1c9c3303c020ae09b
+      IMAGE: ghcr.io/jaxdoesit/mcgateway-broadcast:release-160-friend-remove-v2-source-${{ github.sha }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          repository: MCXboxBroadcast/Broadcaster
+          ref: 798d8b3a6107359643b525f1c9c3303c020ae09b
+          path: upstream
+          persist-credentials: false
+      - uses: actions/checkout@v6
+        with:
+          path: overlay
+          persist-credentials: false
+      - name: Apply exact source-only overlay
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C upstream rev-parse HEAD)" = "$UPSTREAM_SHA"
+          python3 -B overlay/tools/test_release160_patch.py upstream
+          python3 -B overlay/tools/apply_mcgateway_release160_patch.py upstream
+          mkdir -p upstream/core/src/mcgatewayProof/java/com/rtm516/mcxboxbroadcast/core/configs
+          mkdir -p upstream/core/src/mcgatewayProof/java/com/rtm516/mcxboxbroadcast/core
+          cp overlay/tools/release160/ConfigCompatibilityProof.java upstream/core/src/mcgatewayProof/java/com/rtm516/mcxboxbroadcast/core/configs/
+          cp overlay/tools/release160/FriendRemovalV2ContractProof.java upstream/core/src/mcgatewayProof/java/com/rtm516/mcxboxbroadcast/core/
+          cat overlay/tools/release160/config-proof.gradle.kts >> upstream/core/build.gradle.kts
+          git -C upstream diff --check
+          grep -Fq 'MCGATEWAY_FRIEND_REMOVE_V160_V2' upstream/core/src/main/java/com/rtm516/mcxboxbroadcast/core/FriendManager.java
+          grep -Fq 'MCGATEWAY_RELEASE160_FRIEND_REMOVAL_MODE' upstream/bootstrap/standalone/src/main/java/com/rtm516/mcxboxbroadcast/bootstrap/standalone/StandaloneLoggerImpl.java
+          grep -Fq 'friends remove is DENIED' upstream/bootstrap/standalone/src/main/java/com/rtm516/mcxboxbroadcast/bootstrap/standalone/StandaloneLoggerImpl.java
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: gradle/actions/wrapper-validation@v5
+      - uses: gradle/actions/setup-gradle@v5
+      - name: Compile and run offline proofs
+        working-directory: upstream
+        run: ./gradlew --no-daemon --max-workers=2 -Dorg.gradle.jvmargs=-Xmx2g build :core:mcgatewayConfigCompatibility :core:mcgatewayFriendRemovalV2Contract
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Refuse immutable candidate overwrite
+        run: |
+          set -euo pipefail
+          if docker manifest inspect "$IMAGE" >/dev/null 2>&1; then exit 1; fi
+      - uses: docker/build-push-action@v7
+        with:
+          context: upstream
+          file: upstream/bootstrap/standalone/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: ${{ env.IMAGE }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/JaxDoesIt/Broadcaster-unfollow
+            org.opencontainers.image.revision=${{ github.sha }}
+            io.mcgateway.upstream-release=160
+            io.mcgateway.upstream-sha=798d8b3a6107359643b525f1c9c3303c020ae09b
+            io.mcgateway.overlay-variant=friend-remove-v2-source-only
+            io.mcgateway.friend-removal-protocol=v2-default-disabled
+            io.mcgateway.production-ready=false
+      - name: Record non-production candidate
+        run: echo 'Candidate only: no Dell, Xbox request, cleanup dispatch, stable/test tag, or rollout change.'
