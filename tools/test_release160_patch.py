@@ -21,6 +21,7 @@ def main():
         core=(root/'core/src/main/java/com/rtm516/mcxboxbroadcast/core/SessionManagerCore.java').read_text()
         relay=(root/'core/src/main/java/com/rtm516/mcxboxbroadcast/core/nethernet/HttpRelaySignaling.java').read_text()
         logger=(root/'bootstrap/standalone/src/main/java/com/rtm516/mcxboxbroadcast/bootstrap/standalone/StandaloneLoggerImpl.java').read_text()
+        workflow=PATCH.parent.parent/'.github/workflows/release160-friend-removal-v2-source.yml'
         check(all(item in friend for item in ('response.statusCode() != 200','missing people snapshot','incomplete paginated friend snapshot','invalid/duplicate friend identity or relationship','person.get("isFriend")')),'friend count guards missing')
         check('MCGATEWAY_FRIEND_REMOVE_V160_V2' in friend and 'MCGATEWAY_FRIEND_STATE_V160_V2' in friend,'v2 target receipts missing')
         check('ReentrantReadWriteLock mcgatewayV2Lock' in friend and 'mcgatewayV2Lock.writeLock().tryLock()' in friend and 'mcgatewayV2Lock.readLock().lock()' in friend and all(('MCGATEWAY_RELEASE160_V2_ADD_LOCK' in friend, 'MCGATEWAY_RELEASE160_V2_ADD_IF_REQUIRED_LOCK' in friend, 'MCGATEWAY_RELEASE160_V2_REMOVE_LOCK' in friend, 'MCGATEWAY_RELEASE160_V2_INTERNAL_LOCK' in friend)),'v2 mutation serialization missing')
@@ -43,6 +44,7 @@ def main():
         check('private void expireFriends()' in manager,'unexpected SessionManager expiry implementation removed')
         config=(root/'core/src/main/java/com/rtm516/mcxboxbroadcast/core/configs/ConfigLoader.java').read_text()
         check('if (originallyEmpty) {' in config and 'currentVersion != newVersion' not in config[config.index('if (originallyEmpty) {'):],'config persistence guard missing')
+        check('FriendRemovalV2ContractProof.java' in workflow.read_text() and 'FriendRemovalV2InterleavingProof.java' in workflow.read_text() and 'mcgatewayFriendRemovalV2Interleaving' in workflow.read_text(),'V2 proof workflow wiring missing')
     with tempfile.TemporaryDirectory(prefix='mcgateway160-bad.') as temp:
         root=Path(temp)/'source';clone(upstream,root);target=root/FILES[0];target.write_text(target.read_text()+'\n// MCGATEWAY_RELEASE160_READONLY_OVERLAY\n');before=digest(root)
         failed=run('python3',str(PATCH),str(root));check(failed.returncode!=0 and 'hash mismatch' in failed.stderr,'injected marker bypassed hash guard')

@@ -47,6 +47,7 @@ jobs:
           mkdir -p upstream/core/src/mcgatewayProof/java/com/rtm516/mcxboxbroadcast/core
           cp overlay/tools/release160/ConfigCompatibilityProof.java upstream/core/src/mcgatewayProof/java/com/rtm516/mcxboxbroadcast/core/configs/
           cp overlay/tools/release160/FriendRemovalV2ContractProof.java upstream/core/src/mcgatewayProof/java/com/rtm516/mcxboxbroadcast/core/
+          cp overlay/tools/release160/FriendRemovalV2InterleavingProof.java upstream/core/src/mcgatewayProof/java/com/rtm516/mcxboxbroadcast/core/
           cat overlay/tools/release160/config-proof.gradle.kts >> upstream/core/build.gradle.kts
           git -C upstream diff --check
           grep -Fq 'MCGATEWAY_FRIEND_REMOVE_V160_V2' upstream/core/src/main/java/com/rtm516/mcxboxbroadcast/core/FriendManager.java
