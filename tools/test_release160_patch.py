@@ -26,6 +26,7 @@ def main():
         check('mcgatewayV2Lock.tryLock()' in friend and 'MCGATEWAY_RELEASE160_V2_INTERNAL_LOCK' in friend,'v2 mutation serialization missing')
         check('friendRequestSent' in friend and 'friendRequestReceived' in friend and 'response.statusCode() != 200' in friend,'strict target state guards missing')
         check('mcgatewayV2BodyHandler()' in friend and 'MCGATEWAY_V2_MAX_BODY_BYTES = 16 * 1024' in friend and 'future.cancel(true)' in friend,'v2 response/deadline bound missing')
+        check('mcgatewayV2Skip' in friend and 'if (depth > 8)' in friend and 'if (++count > 64)' in friend and 'if (!names.add(r.nextName()))' in friend,'v2 JSON depth/duplicate bounds missing')
         check('TimeUnit.SECONDS.toNanos(20)' in friend and 'Math.min(8_000L, mcgatewayV2Remaining(deadline))' in friend,'absolute/individual request budgets missing')
         check('DateTimeFormatter.RFC_1123_DATE_TIME' in friend and 'Cache-Control", "no-cache' in friend,'freshness fencing missing')
         check('mcgatewayV2SessionIdentity' in friend and 'mcgatewayV2Hash(rawSession)' in friend,'session binding missing')

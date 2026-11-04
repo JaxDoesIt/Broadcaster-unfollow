@@ -53,6 +53,18 @@ V2_FRIEND_MANAGER = r'''
         try { return future.get(mcgatewayV2Remaining(deadline), java.util.concurrent.TimeUnit.MILLISECONDS); }
         catch (java.util.concurrent.TimeoutException error) { future.cancel(true); throw error; }
     }
+    private static void mcgatewayV2Skip(com.google.gson.stream.JsonReader r, int depth) throws Exception {
+        if (depth > 8) throw new IllegalStateException("depth");
+        switch (r.peek()) {
+            case BEGIN_OBJECT -> { java.util.Set<String> names = new java.util.HashSet<>(); r.beginObject(); while (r.hasNext()) { if (!names.add(r.nextName())) throw new IllegalStateException("duplicate"); mcgatewayV2Skip(r, depth + 1); } r.endObject(); }
+            case BEGIN_ARRAY -> { int count = 0; r.beginArray(); while (r.hasNext()) { if (++count > 64) throw new IllegalStateException("array"); mcgatewayV2Skip(r, depth + 1); } r.endArray(); }
+            case STRING -> { if (r.nextString().length() > 256) throw new IllegalStateException("string"); }
+            case NUMBER -> { if (r.nextString().length() > 64) throw new IllegalStateException("number"); }
+            case BOOLEAN -> r.nextBoolean();
+            case NULL -> r.nextNull();
+            default -> throw new IllegalStateException("token");
+        }
+    }
     private static McgatewayV2State mcgatewayV2Parse(String body, String target) throws Exception {
         com.google.gson.stream.JsonReader r = new com.google.gson.stream.JsonReader(new java.io.StringReader(body)); r.setLenient(false);
         if (r.peek() != com.google.gson.stream.JsonToken.BEGIN_OBJECT) throw new IllegalStateException("root");
@@ -62,7 +74,7 @@ V2_FRIEND_MANAGER = r'''
             else if (name.equals("isFriend") || name.equals("friendRequestSent") || name.equals("friendRequestReceived")) {
                 if (r.peek() != com.google.gson.stream.JsonToken.BOOLEAN) throw new IllegalStateException("boolean"); Boolean v = r.nextBoolean();
                 if (name.equals("isFriend")) friend = v; else if (name.equals("friendRequestSent")) sent = v; else received = v;
-            } else r.skipValue();
+            } else mcgatewayV2Skip(r, 0);
         } r.endObject();
         if (r.peek() != com.google.gson.stream.JsonToken.END_DOCUMENT || !target.equals(xuid) || friend == null || sent == null || received == null) throw new IllegalStateException("incomplete");
         return new McgatewayV2State(friend || sent || received ? "present" : "absent", friend && !sent && !received);

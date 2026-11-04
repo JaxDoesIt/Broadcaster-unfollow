@@ -87,4 +87,5 @@ jobs:
             io.mcgateway.friend-removal-protocol=v2-default-disabled
             io.mcgateway.production-ready=false
       - name: Record non-production candidate
-        run: echo 'Candidate only: no Dell, Xbox request, cleanup dispatch, stable/test tag, or rollout change.'
+        run: |
+          echo 'Candidate only: no Dell, Xbox request, cleanup dispatch, stable/test tag, or rollout change.'
