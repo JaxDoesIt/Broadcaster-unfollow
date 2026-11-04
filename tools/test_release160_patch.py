@@ -44,7 +44,9 @@ def main():
         check('private void expireFriends()' in manager,'unexpected SessionManager expiry implementation removed')
         config=(root/'core/src/main/java/com/rtm516/mcxboxbroadcast/core/configs/ConfigLoader.java').read_text()
         check('if (originallyEmpty) {' in config and 'currentVersion != newVersion' not in config[config.index('if (originallyEmpty) {'):],'config persistence guard missing')
-        check('FriendRemovalV2ContractProof.java' in workflow.read_text() and 'FriendRemovalV2InterleavingProof.java' in workflow.read_text() and 'mcgatewayFriendRemovalV2Interleaving' in workflow.read_text(),'V2 proof workflow wiring missing')
+        workflow_text=workflow.read_text()
+        check('FriendRemovalV2ContractProof.java' in workflow_text and 'FriendRemovalV2InterleavingProof.java' in workflow_text and 'mcgatewayFriendRemovalV2Interleaving' in workflow_text,'V2 proof workflow wiring missing')
+        check('Registry lookup did not prove the candidate tag absent.' in workflow_text and 'docker buildx imagetools inspect "$IMAGE"' in workflow_text,'immutable candidate workflow fence missing')
     with tempfile.TemporaryDirectory(prefix='mcgateway160-bad.') as temp:
         root=Path(temp)/'source';clone(upstream,root);target=root/FILES[0];target.write_text(target.read_text()+'\n// MCGATEWAY_RELEASE160_READONLY_OVERLAY\n');before=digest(root)
         failed=run('python3',str(PATCH),str(root));check(failed.returncode!=0 and 'hash mismatch' in failed.stderr,'injected marker bypassed hash guard')

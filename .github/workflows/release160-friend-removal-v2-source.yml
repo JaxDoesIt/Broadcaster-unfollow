@@ -71,7 +71,14 @@ jobs:
       - name: Refuse immutable candidate overwrite
         run: |
           set -euo pipefail
-          if docker manifest inspect "$IMAGE" >/dev/null 2>&1; then exit 1; fi
+          if docker manifest inspect "$IMAGE" >/tmp/manifest.out 2>/tmp/manifest.err; then
+            echo 'Candidate tag already exists; immutable candidates are never overwritten.'
+            exit 1
+          fi
+          if ! grep -Eiq 'manifest unknown|no such manifest' /tmp/manifest.err; then
+            echo 'Registry lookup did not prove the candidate tag absent.'
+            exit 1
+          fi
       - uses: docker/build-push-action@v7
         with:
           context: upstream
@@ -89,4 +96,6 @@ jobs:
             io.mcgateway.production-ready=false
       - name: Record non-production candidate
         run: |
+          set -euo pipefail
+          docker buildx imagetools inspect "$IMAGE"
           echo 'Candidate only: no Dell, Xbox request, cleanup dispatch, stable/test tag, or rollout change.'
