@@ -56,6 +56,10 @@
                 if (mcgatewayRecoveryRehearsalUsed) throw new IllegalStateException("rehearsal-already-attempted");
                 if (!before.removable()) throw new IllegalStateException("pre-not-removable");
                 mcgatewayRecoveryBinding(plan, target, rawAccount, 300_000L);
+                mcgatewayRecoveryStable(plan, target, rawAccount, rawSession);
+                logger.info("MCGATEWAY_FRIEND_RECOVERY_ARMED_V1 nonce=" + nonce + " plan=" + plan + " planHash=" + planHash
+                    + " xuid=" + target + " account=" + accountHash + " session=" + sessionHash
+                    + " action=rehearse pre=present isFriend=true friendRequestSent=false friendRequestReceived=false deleteNext=true verified=true stage=pre-delete");
                 stage = McgatewayRecoveryStage.delete;
                 // Conservative: this says dispatch was attempted, not that
                 // a successful remote deletion has already been established.

@@ -23,6 +23,8 @@ import javax.net.ssl.*;
 public final class FriendStateV2ActualProof {
     private final Map<String,String> toAdd = new HashMap<>(), toRemove = new HashMap<>();
     private final FakeSession sessionManager = new FakeSession();
+    private final FakeLogger logger = new FakeLogger();
+    static final class FakeLogger { final List<String> lines=new ArrayList<>(); void info(String line){lines.add(line);} }
     private final Map<String,String> recoveryEnv = new HashMap<>();
     static final String TARGET = "2533270000000000";
     static final class Constants {
@@ -118,12 +120,20 @@ footer = r'''
             need(near.mcgatewayFriendRecoveryV1(nonce(),PLAN,TARGET,rehearsal).contains("verified=false"));
             need(((ScriptedClient)near.mcgatewayV2HttpClient).methods.isEmpty());
         }
+        for(Answer refused:List.of(missing,answer(200,flags(false,true,false)),answer(200,flags(true,false,true)))){
+            var noMarker=recovery(refused);
+            need(noMarker.mcgatewayFriendRecoveryV1(nonce(),PLAN,TARGET,true).contains("deleteAttempted=false post=unknown verified=false"));
+            need(noMarker.logger.lines.isEmpty());
+            need(!((ScriptedClient)noMarker.mcgatewayV2HttpClient).methods.contains("DELETE"));
+        }
         var wrong=recovery(present);
         need(wrong.mcgatewayFriendRecoveryV1(nonce(),PLAN,"2533270000000001",true).contains("verified=false"));
         need(((ScriptedClient)wrong.mcgatewayV2HttpClient).methods.isEmpty());
         var f=recovery(present,answer(204,"{}"),missing,answer(204,"{}"),present);
         String n=nonce(),receipt=f.mcgatewayFriendRecoveryV1(n,PLAN,TARGET,true);
         need(receipt.contains("action=rehearse result=restored pre=present deleteAttempted=true post=present verified=true stage=complete"));
+        need(f.logger.lines.size()==1 && f.logger.lines.get(0).contains("MCGATEWAY_FRIEND_RECOVERY_ARMED_V1 nonce="+n));
+        need(f.logger.lines.get(0).endsWith("pre=present isFriend=true friendRequestSent=false friendRequestReceived=false deleteNext=true verified=true stage=pre-delete"));
         need(((ScriptedClient)f.mcgatewayV2HttpClient).methods.equals(List.of("GET","DELETE","GET","PUT","GET")));
         need(f.mcgatewayFriendRecoveryV1(n,PLAN,TARGET,true).contains("verified=false"));
         ((ScriptedClient)f.mcgatewayV2HttpClient).answers.add(present);
@@ -142,6 +152,7 @@ footer = r'''
         // RESTORE_REQUIRED. A fresh process may restore the SAME sealed target.
         var lost=recovery(present,answer(204,"{}"));
         need(lost.mcgatewayFriendRecoveryV1(nonce(),PLAN,TARGET,true).contains("deleteAttempted=true post=unknown verified=false"));
+        need(lost.logger.lines.size()==1);
         var restarted=recovery(missing,answer(204,"{}"),present);restarted.sessionManager.session="new-session";
         need(restarted.mcgatewayFriendRecoveryV1(nonce(),PLAN,TARGET,false).contains("action=restore result=restored pre=unknown deleteAttempted=false post=present verified=true"));
         var already=recovery(present);

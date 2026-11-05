@@ -34,3 +34,15 @@ root recovery attestation, permit issuer or protected final candidate promotion
 is installed. A payload parser or source/image CI is not a root attestation.
 Owner control remains excluded. Actual removal's unknown state must NOT trigger
 an asynchronous restore racing a late Control Bot commit.
+
+## Pre-delete recovery authority marker
+
+The rehearsal emits MCGATEWAY_FRIEND_RECOVERY_ARMED_V1 only after strict positive
+friend/no-pending GET, the second5min margin check and stable plan/account/session/
+queue checks, immediately before DELETE. A failed/unknown rehearsal does NOT
+authorize PUT by itself. The protected collector must durably authenticate one
+nonce/plan/target/account/session/instance/time-bound marker with command delivery
+and closed child before automatic restore. No marker, ambiguous capture or
+unsettled child requires manual intervention. DB membership/GET state=present
+are not substitutes. Producer compile/actual-method fixtures verify refused
+pre-states emit no marker/no DELETE and admitted failure retains one marker.
