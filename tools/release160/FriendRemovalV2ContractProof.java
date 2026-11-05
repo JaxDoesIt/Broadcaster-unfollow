@@ -8,10 +8,10 @@ public final class FriendRemovalV2ContractProof {
         return new State(friend || sent || received ? "present" : "absent", friend && !sent && !received);
     }
     static String terminal(String before, int deleteStatus, String after, boolean accountStable, boolean sessionStable) {
-        if (before.equals("absent")) return "already-absent";
+        // Production requires strict positive admission even for a no-op.
         if (!before.equals("present") || !accountStable || !sessionStable) return "uncertain";
         if (deleteStatus != 200 && deleteStatus != 204) return "uncertain";
-        return after.equals("absent") ? "removed" : "uncertain";
+        return after.equals("absent") || after.equals("friendship-absent") ? "removed" : "uncertain";
     }
     static boolean strictTransport(int status, boolean exactUri, String contentType, int age, boolean freshDate,
                                    boolean accountBefore, boolean accountAfter, boolean sessionBefore, boolean sessionAfter) {
@@ -26,9 +26,15 @@ public final class FriendRemovalV2ContractProof {
             need(current.value().equals(bits == 0 ? "absent" : "present"));
             need(current.removable() == (friend && !sent && !received));
         }
-        need(terminal("absent", 0, "absent", true, true).equals("already-absent"));
+        need(terminal("absent", 0, "absent", true, true).equals("uncertain"));
         need(terminal("present", 200, "absent", true, true).equals("removed"));
         need(terminal("present", 204, "absent", true, true).equals("removed"));
+        need(terminal("present", 204, "friendship-absent", true, true).equals("removed"));
+        need(terminal("unknown", 204, "friendship-absent", true, true).equals("uncertain"));
+        need(terminal("present", 404, "friendship-absent", true, true).equals("uncertain"));
+        need(terminal("present", 204, "friendship-absent", false, true).equals("uncertain"));
+        need(terminal("present", 204, "friendship-absent", true, false).equals("uncertain"));
+
         for (int status : new int[]{0, 199, 201, 404, 429, 500}) need(terminal("present", status, "absent", true, true).equals("uncertain"));
         need(terminal("present", 204, "present", true, true).equals("uncertain"));
         need(terminal("present", 204, "unknown", true, true).equals("uncertain"));

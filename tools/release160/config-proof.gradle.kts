@@ -28,3 +28,10 @@ tasks.register<JavaExec>("mcgatewayFriendStateV2Diagnostics") {
     mainClass.set("com.rtm516.mcxboxbroadcast.core.FriendStateV2DiagnosticProof")
     maxHeapSize = "256m"
 }
+
+tasks.register<JavaExec>("mcgatewayFriendStateV2Actual") {
+    dependsOn(mcgatewayProof.classesTaskName)
+    classpath = mcgatewayProof.runtimeClasspath
+    mainClass.set("com.rtm516.mcxboxbroadcast.core.FriendStateV2ActualProof")
+    maxHeapSize = "256m"
+}

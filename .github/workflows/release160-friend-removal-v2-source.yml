@@ -49,6 +49,7 @@ jobs:
           cp overlay/tools/release160/FriendRemovalV2ContractProof.java upstream/core/src/mcgatewayProof/java/com/rtm516/mcxboxbroadcast/core/
           cp overlay/tools/release160/FriendRemovalV2InterleavingProof.java upstream/core/src/mcgatewayProof/java/com/rtm516/mcxboxbroadcast/core/
           cp overlay/tools/release160/FriendStateV2DiagnosticProof.java upstream/core/src/mcgatewayProof/java/com/rtm516/mcxboxbroadcast/core/
+          python3 -B overlay/tools/release160/generate_actual_v2_proof.py upstream/core/src/mcgatewayProof/java/com/rtm516/mcxboxbroadcast/core/FriendStateV2ActualProof.java
           cat overlay/tools/release160/config-proof.gradle.kts >> upstream/core/build.gradle.kts
           git -C upstream diff --check
           grep -Fq 'MCGATEWAY_FRIEND_REMOVE_V160_V2' upstream/core/src/main/java/com/rtm516/mcxboxbroadcast/core/FriendManager.java
@@ -62,7 +63,7 @@ jobs:
       - uses: gradle/actions/setup-gradle@v5
       - name: Compile and run offline proofs
         working-directory: upstream
-        run: ./gradlew --no-daemon --max-workers=2 -Dorg.gradle.jvmargs=-Xmx2g build :core:mcgatewayConfigCompatibility :core:mcgatewayFriendRemovalV2Contract :core:mcgatewayFriendRemovalV2Interleaving :core:mcgatewayFriendStateV2Diagnostics
+        run: ./gradlew --no-daemon --max-workers=2 -Dorg.gradle.jvmargs=-Xmx2g build :core:mcgatewayConfigCompatibility :core:mcgatewayFriendRemovalV2Contract :core:mcgatewayFriendRemovalV2Interleaving :core:mcgatewayFriendStateV2Diagnostics :core:mcgatewayFriendStateV2Actual
       - uses: docker/setup-buildx-action@v4
       - uses: docker/login-action@v4
         with:

@@ -14,6 +14,7 @@ V2_FRIEND_MANAGER = r'''
     private final java.util.Set<String> mcgatewayV2Nonces = new java.util.HashSet<>();
     private final HttpClient mcgatewayV2HttpClient = HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NEVER).connectTimeout(java.time.Duration.ofSeconds(8)).build();
     private record McgatewayV2State(String state, boolean removable) { }
+    private enum McgatewayV2ReadPhase { OBSERVE, BEFORE_DELETE, AFTER_DELETE }
     private enum McgatewayV2StateDiagnostic {
         INVALID_REQUEST("input", "invalid-request"), NONCE_REJECTED("input", "nonce-rejected"),
         NORMAL_FRIEND_WORK_BUSY("lock", "normal-friend-work-busy"), SESSION_UNAVAILABLE("identity", "session-unavailable"),
@@ -134,7 +135,7 @@ V2_FRIEND_MANAGER = r'''
         } catch (McgatewayV2StateException error) { throw error; }
         catch (Exception error) { throw mcgatewayV2StateFail(McgatewayV2StateDiagnostic.JSON); }
     }
-    private McgatewayV2State mcgatewayV2Read(String target, String account, String session, long deadline) throws Exception {
+    private McgatewayV2State mcgatewayV2Read(String target, String account, String session, long deadline, McgatewayV2ReadPhase phase) throws Exception {
         if (toAdd.containsKey(target) || toRemove.containsKey(target)) throw mcgatewayV2StateFail(McgatewayV2StateDiagnostic.TARGET_QUEUED);
         if (!account.equals(sessionManager.getXuid()) || !session.equals(sessionManager.mcgatewayV2SessionIdentity())) throw mcgatewayV2StateFail(McgatewayV2StateDiagnostic.IDENTITY_CHANGED);
         URI uri = URI.create(Constants.PEOPLE.formatted(target));
@@ -145,7 +146,10 @@ V2_FRIEND_MANAGER = r'''
         catch (Exception error) { throw mcgatewayV2StateFail(McgatewayV2StateDiagnostic.TRANSPORT); }
         HttpResponse<byte[]> response = mcgatewayV2Send(request, deadline);
         if (!uri.equals(response.uri()) || (response.statusCode() >= 300 && response.statusCode() < 400)) throw mcgatewayV2StateFail(McgatewayV2StateDiagnostic.REDIRECT);
-        if (response.statusCode() != 200) throw mcgatewayV2StateFail(mcgatewayV2HttpDiagnostic(response.statusCode()));
+        // A 404 NEVER supplies observation or mutation admission. Only an exact
+        // post-read following strict pre-state + successful DELETE may use it.
+        boolean postDelete404 = phase == McgatewayV2ReadPhase.AFTER_DELETE && response.statusCode() == 404;
+        if (response.statusCode() != 200 && !postDelete404) throw mcgatewayV2StateFail(mcgatewayV2HttpDiagnostic(response.statusCode()));
         java.util.List<String> types = response.headers().allValues("Content-Type"), ages = response.headers().allValues("Age"), dates = response.headers().allValues("Date");
         if (types.size() != 1 || ages.size() > 1 || dates.size() != 1) throw mcgatewayV2StateFail(McgatewayV2StateDiagnostic.HEADERS);
         String type = types.get(0).split(";", 2)[0].trim().toLowerCase(java.util.Locale.ROOT); long age;
@@ -156,6 +160,9 @@ V2_FRIEND_MANAGER = r'''
         if (age != 0) throw mcgatewayV2StateFail(McgatewayV2StateDiagnostic.AGE);
         if (Math.abs(System.currentTimeMillis() - dateMs) > 60_000L) throw mcgatewayV2StateFail(McgatewayV2StateDiagnostic.DATE);
         if (!account.equals(sessionManager.getXuid()) || !session.equals(sessionManager.mcgatewayV2SessionIdentity())) throw mcgatewayV2StateFail(McgatewayV2StateDiagnostic.IDENTITY_CHANGED);
+        // Microsoft documents target GET404 as absent from the owner People list.
+        // It does not establish the values of either pending-request flag.
+        if (postDelete404) return new McgatewayV2State("friendship-absent", false);
         return mcgatewayV2Parse(mcgatewayV2Utf8(response.body()), target);
     }
     private String mcgatewayV2Failure(String marker, String nonce, String target, String account, String session, String pre) {
@@ -171,7 +178,7 @@ V2_FRIEND_MANAGER = r'''
             long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(20); String account, rawSession;
             try { account = sessionManager.getXuid(); rawSession = sessionManager.mcgatewayV2SessionIdentity(); hash = mcgatewayV2Hash(account); session = mcgatewayV2Hash(rawSession); }
             catch (Exception error) { return mcgatewayV2StateUnknown(nonce, target, hash, session, McgatewayV2StateDiagnostic.SESSION_UNAVAILABLE); }
-            McgatewayV2State state = mcgatewayV2Read(target, account, rawSession, deadline); return "MCGATEWAY_FRIEND_STATE_V160_V2 nonce=" + nonce + " xuid=" + target + " account=" + hash + " session=" + session + " state=" + state.state() + " verified=true";
+            McgatewayV2State state = mcgatewayV2Read(target, account, rawSession, deadline, McgatewayV2ReadPhase.OBSERVE); return "MCGATEWAY_FRIEND_STATE_V160_V2 nonce=" + nonce + " xuid=" + target + " account=" + hash + " session=" + session + " state=" + state.state() + " verified=true";
         } catch (Exception error) { return mcgatewayV2StateUnknown(nonce, target, hash, session, mcgatewayV2StateDiagnostic(error)); }
         finally { mcgatewayV2Lock.writeLock().unlock(); }
     }
@@ -180,15 +187,15 @@ V2_FRIEND_MANAGER = r'''
         if (!mcgatewayV2Lock.writeLock().tryLock()) return "MCGATEWAY_FRIEND_REMOVE_V160_V2 nonce=" + nonce + " xuid=" + target + " account=unavailable session=unavailable result=uncertain pre=unknown post=unknown verified=false";
         String account = "unavailable", session = "unavailable", pre = "unknown";
         try { long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(20); String raw = sessionManager.getXuid(), rawSession = sessionManager.mcgatewayV2SessionIdentity(); account = mcgatewayV2Hash(raw); session = mcgatewayV2Hash(rawSession);
-            McgatewayV2State before = mcgatewayV2Read(target, raw, rawSession, deadline); pre = before.state();
-            if (pre.equals("absent")) return "MCGATEWAY_FRIEND_REMOVE_V160_V2 nonce=" + nonce + " xuid=" + target + " account=" + account + " session=" + session + " result=already-absent pre=absent post=absent verified=true";
+            McgatewayV2State before = mcgatewayV2Read(target, raw, rawSession, deadline, McgatewayV2ReadPhase.BEFORE_DELETE); pre = before.state();
             if (!before.removable()) throw new IllegalStateException("pending");
             if (toAdd.containsKey(target) || toRemove.containsKey(target) || !raw.equals(sessionManager.getXuid()) || !rawSession.equals(sessionManager.mcgatewayV2SessionIdentity())) throw new IllegalStateException("identity-before-delete");
             URI uri = URI.create(Constants.FRIEND.formatted(target)); HttpRequest request = HttpRequest.newBuilder().uri(uri).timeout(java.time.Duration.ofMillis(Math.min(8_000L, mcgatewayV2Remaining(deadline)))).header("Authorization", sessionManager.getTokenHeader()).DELETE().build();
             HttpResponse<byte[]> deleted = mcgatewayV2Send(request, deadline);
             if ((deleted.statusCode() != 200 && deleted.statusCode() != 204) || !uri.equals(deleted.uri()) || !raw.equals(sessionManager.getXuid()) || !rawSession.equals(sessionManager.mcgatewayV2SessionIdentity())) throw new IllegalStateException("delete");
-            McgatewayV2State after = mcgatewayV2Read(target, raw, rawSession, deadline); if (!after.state().equals("absent")) throw new IllegalStateException("post");
-            return "MCGATEWAY_FRIEND_REMOVE_V160_V2 nonce=" + nonce + " xuid=" + target + " account=" + account + " session=" + session + " result=removed pre=present post=absent verified=true";
+            McgatewayV2State after = mcgatewayV2Read(target, raw, rawSession, deadline, McgatewayV2ReadPhase.AFTER_DELETE);
+            if (!after.state().equals("absent") && !after.state().equals("friendship-absent")) throw new IllegalStateException("post");
+            return "MCGATEWAY_FRIEND_REMOVE_V160_V2 nonce=" + nonce + " xuid=" + target + " account=" + account + " session=" + session + " result=removed pre=present post=" + after.state() + " verified=true" + (after.state().equals("friendship-absent") ? " basis=target-404-after-delete" : "");
         } catch (Exception e) { return mcgatewayV2Failure("MCGATEWAY_FRIEND_REMOVE_V160_V2", mcgatewayV2Nonce(nonce) ? nonce : "invalid", mcgatewayV2Xuid(target) ? target : "invalid", account, session, pre); }
         finally { mcgatewayV2Lock.writeLock().unlock(); }
     }

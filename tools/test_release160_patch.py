@@ -41,6 +41,10 @@ def main():
         remove_end='    public void init(CoreConfig.FriendSyncConfig friendSyncConfig) {'
         check(current_patch[current_patch.index(remove_start):current_patch.index(remove_end)] == baseline_patch[baseline_patch.index(remove_start):baseline_patch.index(remove_end)],'GET diagnostics must not alter V2 removal command source')
         check('ReentrantReadWriteLock mcgatewayV2Lock' in friend and 'mcgatewayV2Lock.writeLock().tryLock()' in friend and 'mcgatewayV2Lock.readLock().lock()' in friend and all(('MCGATEWAY_RELEASE160_V2_ADD_LOCK' in friend, 'MCGATEWAY_RELEASE160_V2_ADD_IF_REQUIRED_LOCK' in friend, 'MCGATEWAY_RELEASE160_V2_REMOVE_LOCK' in friend, 'MCGATEWAY_RELEASE160_V2_INTERNAL_LOCK' in friend)),'v2 mutation serialization missing')
+        check('phase == McgatewayV2ReadPhase.AFTER_DELETE && response.statusCode() == 404' in friend,'404 must be post-delete only')
+        check('McgatewayV2ReadPhase.BEFORE_DELETE' in friend and 'McgatewayV2ReadPhase.OBSERVE' in friend,'read phase must be explicit')
+        check('result=already-absent pre=absent' not in friend,'no admission/confirmation from absent pre-state')
+        check('basis=target-404-after-delete' in friend and 'new McgatewayV2State("friendship-absent", false)' in friend,'separate friendship-only proof missing')
         check('friendRequestSent' in friend and 'friendRequestReceived' in friend and 'response.statusCode() != 200' in friend,'strict target state guards missing')
         check('mcgatewayV2BodyHandler()' in friend and 'MCGATEWAY_V2_MAX_BODY_BYTES = 16 * 1024' in friend and 'future.cancel(true)' in friend,'v2 response/deadline bound missing')
         check('mcgatewayV2Skip' in friend and 'if (depth > 8)' in friend and 'if (++count > 64)' in friend and 'if (!names.add(r.nextName()))' in friend,'v2 JSON depth/duplicate bounds missing')
