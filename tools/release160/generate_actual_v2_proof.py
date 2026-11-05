@@ -24,7 +24,7 @@ public final class FriendStateV2ActualProof {
     private final Map<String,String> toAdd = new HashMap<>(), toRemove = new HashMap<>();
     private final FakeSession sessionManager = new FakeSession();
     private final FakeLogger logger = new FakeLogger();
-    static final class FakeLogger { final List<String> lines=new ArrayList<>(); void info(String line){lines.add(line);} }
+    final class FakeLogger { final List<String> lines=new ArrayList<>(); final List<List<String>> calls=new ArrayList<>(); void info(String line){lines.add(line);calls.add(List.copyOf(((ScriptedClient)mcgatewayV2HttpClient).methods));} }
     private final Map<String,String> recoveryEnv = new HashMap<>();
     static final String TARGET = "2533270000000000";
     static final class Constants {
@@ -132,14 +132,25 @@ footer = r'''
         var f=recovery(present,answer(204,"{}"),missing,answer(204,"{}"),present);
         String n=nonce(),receipt=f.mcgatewayFriendRecoveryV1(n,PLAN,TARGET,true);
         need(receipt.contains("action=rehearse result=restored pre=present deleteAttempted=true post=present verified=true stage=complete"));
-        need(f.logger.lines.size()==1 && f.logger.lines.get(0).contains("MCGATEWAY_FRIEND_RECOVERY_ARMED_V1 nonce="+n));
+        need(f.logger.lines.size()==2 && f.logger.lines.get(0).contains("MCGATEWAY_FRIEND_RECOVERY_ARMED_V1 nonce="+n));
         need(f.logger.lines.get(0).endsWith("pre=present isFriend=true friendRequestSent=false friendRequestReceived=false deleteNext=true verified=true stage=pre-delete"));
+        need(f.logger.lines.get(1).contains("MCGATEWAY_FRIEND_RECOVERY_SETTLED_V1 nonce="+n));
+        need(f.logger.calls.equals(List.of(List.of("GET"),List.of("GET","DELETE","GET"))));
+
         need(((ScriptedClient)f.mcgatewayV2HttpClient).methods.equals(List.of("GET","DELETE","GET","PUT","GET")));
         need(f.mcgatewayFriendRecoveryV1(n,PLAN,TARGET,true).contains("verified=false"));
         ((ScriptedClient)f.mcgatewayV2HttpClient).answers.add(present);
         need(f.mcgatewayFriendRecoveryV1(nonce(),PLAN,TARGET,true).contains("verified=false"));
         need(((ScriptedClient)f.mcgatewayV2HttpClient).methods.stream().filter("DELETE"::equals).count()==1);
 
+        for(int deleteStatus:new int[]{200,204})for(int putStatus:new int[]{200,204}){
+            var explicitRecovery=recovery(present,answer(deleteStatus,"{}"),answer(200,flags(false,false,false)),answer(putStatus,"{}"),present);
+            need(explicitRecovery.mcgatewayFriendRecoveryV1(nonce(),PLAN,TARGET,true).contains("post=present verified=true stage=complete"));
+            need(explicitRecovery.logger.lines.size()==2 && explicitRecovery.logger.lines.get(1).contains("post=absent basis=explicit-flags"));
+        }
+        var queuedDelete=recovery(present,answer(202,"{}"));
+        need(queuedDelete.mcgatewayFriendRecoveryV1(nonce(),PLAN,TARGET,true).contains("verified=false stage=delete"));
+        need(queuedDelete.logger.lines.size()==1);
         var pending=recovery(answer(200,flags(false,true,false)));
         need(pending.mcgatewayFriendRecoveryV1(nonce(),PLAN,TARGET,false).contains("verified=false stage=pre"));
         need(((ScriptedClient)pending.mcgatewayV2HttpClient).methods.equals(List.of("GET")));
@@ -148,11 +159,20 @@ footer = r'''
             need(bad.mcgatewayFriendRecoveryV1(nonce(),PLAN,TARGET,false).contains("verified=false"));
         }
         // Exhausting scripted replies models transport loss after deletion.
-        // No verified receipt exists; the independent root journal must retain
-        // RESTORE_REQUIRED. A fresh process may restore the SAME sealed target.
+        // No settled witness exists; the independent root journal must retain
+        // MANUAL_REQUIRED. A separate restore test uses the SAME sealed target.
         var lost=recovery(present,answer(204,"{}"));
         need(lost.mcgatewayFriendRecoveryV1(nonce(),PLAN,TARGET,true).contains("deleteAttempted=true post=unknown verified=false"));
         need(lost.logger.lines.size()==1);
+        // An unknown DELETE/absence outcome supplies only the first witness.
+        var deleteLost=recovery(present);
+        need(deleteLost.mcgatewayFriendRecoveryV1(nonce(),PLAN,TARGET,true).contains("verified=false"));
+        need(deleteLost.logger.lines.size()==1);
+        // Once DELETE+absence are proven, a failed PUT retains BOTH witnesses.
+        var putLost=recovery(present,answer(204,"{}"),missing);
+        need(putLost.mcgatewayFriendRecoveryV1(nonce(),PLAN,TARGET,true).contains("verified=false stage=put"));
+        need(putLost.logger.lines.size()==2);
+
         var restarted=recovery(missing,answer(204,"{}"),present);restarted.sessionManager.session="new-session";
         need(restarted.mcgatewayFriendRecoveryV1(nonce(),PLAN,TARGET,false).contains("action=restore result=restored pre=unknown deleteAttempted=false post=present verified=true"));
         var already=recovery(present);

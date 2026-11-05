@@ -35,14 +35,17 @@ is installed. A payload parser or source/image CI is not a root attestation.
 Owner control remains excluded. Actual removal's unknown state must NOT trigger
 an asynchronous restore racing a late Control Bot commit.
 
-## Pre-delete recovery authority marker
+## Paired recovery authority markers
 
 The rehearsal emits MCGATEWAY_FRIEND_RECOVERY_ARMED_V1 only after strict positive
-friend/no-pending GET, the second5min margin check and stable plan/account/session/
-queue checks, immediately before DELETE. A failed/unknown rehearsal does NOT
-authorize PUT by itself. The protected collector must durably authenticate one
-nonce/plan/target/account/session/instance/time-bound marker with command delivery
-and closed child before automatic restore. No marker, ambiguous capture or
-unsettled child requires manual intervention. DB membership/GET state=present
-are not substitutes. Producer compile/actual-method fixtures verify refused
-pre-states emit no marker/no DELETE and admitted failure retains one marker.
+friend/no-pending GET, the second five-minute margin check and stable bindings,
+immediately before DELETE. This marker alone never authorizes automatic PUT.
+MCGATEWAY_FRIEND_RECOVERY_SETTLED_V1 follows only an acknowledged DELETE200/204
+and fresh authenticated absence GET, before PUT. Both markers must be authenticated
+in one ordered capture, bound to the same nonce/plan/target/account/session/runtime.
+The root collector requires distinct payload hashes, strict capture ordinals,
+closed command delivery and bounded dispatch time. A timeout, missing settled
+marker, ambiguous capture or unsettled child requires manual intervention:
+a late remote DELETE could otherwise race a restore. DB membership and old GET
+observations are not substitutes. Actual-method fixtures check marker placement,
+200/204 combinations, pre-only failures, and rejection of DELETE202.

@@ -69,6 +69,12 @@
                 stage = McgatewayRecoveryStage.absence;
                 McgatewayV2State absent = mcgatewayV2Read(target, rawAccount, rawSession, deadline, McgatewayV2ReadPhase.AFTER_DELETE);
                 if (!absent.state().equals("absent") && !absent.state().equals("friendship-absent")) throw new IllegalStateException("absence");
+                mcgatewayRecoveryStable(plan, target, rawAccount, rawSession);
+                logger.info("MCGATEWAY_FRIEND_RECOVERY_SETTLED_V1 nonce=" + nonce + " plan=" + plan + " planHash=" + planHash
+                    + " xuid=" + target + " account=" + accountHash + " session=" + sessionHash
+                    + " action=rehearse deleteCompleted=true post=" + absent.state()
+                    + " basis=" + (absent.state().equals("friendship-absent") ? "target-404-after-delete" : "explicit-flags")
+                    + " verified=true stage=delete-settled");
             } else if (before.removable()) {
                 mcgatewayRecoveryStable(plan, target, rawAccount, rawSession);
                 result = "already-restored"; post = "present"; verified = true;
@@ -88,7 +94,8 @@
             stage = McgatewayRecoveryStage.complete;
         } catch (Exception error) {
             // Never leak auth/response bodies; a failure after DELETE remains
-            // RESTORE_REQUIRED in the independent root-owned journal.
+            // manual unless BOTH admission and settled-delete evidence were
+            // authenticated by the independent root collector.
         } finally {
             if (locked) mcgatewayV2Lock.writeLock().unlock();
         }
