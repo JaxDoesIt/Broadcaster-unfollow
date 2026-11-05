@@ -1,0 +1,34 @@
+name: Pinned Release160 recovery image numeric identity proof
+on:
+  push:
+    branches: [fix/release160-cleanup-diagnostics-2026-11-04]
+    paths: ['.github/workflows/release160-candidate-identity-proof.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  identity:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      IMAGE: ghcr.io/jaxdoesit/mcgateway-broadcast@sha256:d838a2bc9e09520c33b5c68cb223b101f142b2b564685f3542644d1c4af4c5bd
+    steps:
+      - name: Pull only the already reviewed immutable image
+        run: docker pull "$IMAGE"
+      - name: Verify exact source and numeric nonroot launch identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' "$IMAGE")" = 9cb7d365758fd00b6d948e8b9e96ad52a1c5e885
+          test "$(docker image inspect --format '{{ .Config.User }}' "$IMAGE")" = app:app
+          uid=$(docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges --memory 64m --pids-limit 16 --entrypoint /usr/bin/id "$IMAGE" -u)
+          gid=$(docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges --memory 64m --pids-limit 16 --entrypoint /usr/bin/id "$IMAGE" -g)
+          test "$uid" = 1001
+          test "$gid" = 1001
+          echo '{"source":"9cb7d365758fd00b6d948e8b9e96ad52a1c5e885","image":"sha256:d838a2bc9e09520c33b5c68cb223b101f142b2b564685f3542644d1c4af4c5bd","uid":1001,"gid":1001,"network":"none","productionTouched":false}' > identity-proof.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pinned-release160-numeric-identity
+          path: identity-proof.json
+          retention-days: 30
+          if-no-files-found: error
