@@ -14,7 +14,7 @@ V2_FRIEND_MANAGER = r'''
     private final java.util.Set<String> mcgatewayV2Nonces = new java.util.HashSet<>();
     private final HttpClient mcgatewayV2HttpClient = HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NEVER).connectTimeout(java.time.Duration.ofSeconds(8)).build();
     private record McgatewayV2State(String state, boolean removable) { }
-    private enum McgatewayV2ReadPhase { OBSERVE, BEFORE_DELETE, AFTER_DELETE }
+    private enum McgatewayV2ReadPhase { OBSERVE, BEFORE_DELETE, AFTER_DELETE, BEFORE_RESTORE }
     private enum McgatewayV2StateDiagnostic {
         INVALID_REQUEST("input", "invalid-request"), NONCE_REJECTED("input", "nonce-rejected"),
         NORMAL_FRIEND_WORK_BUSY("lock", "normal-friend-work-busy"), SESSION_UNAVAILABLE("identity", "session-unavailable"),
@@ -148,7 +148,7 @@ V2_FRIEND_MANAGER = r'''
         if (!uri.equals(response.uri()) || (response.statusCode() >= 300 && response.statusCode() < 400)) throw mcgatewayV2StateFail(McgatewayV2StateDiagnostic.REDIRECT);
         // A 404 NEVER supplies observation or mutation admission. Only an exact
         // post-read following strict pre-state + successful DELETE may use it.
-        boolean postDelete404 = phase == McgatewayV2ReadPhase.AFTER_DELETE && response.statusCode() == 404;
+        boolean postDelete404 = (phase == McgatewayV2ReadPhase.AFTER_DELETE || phase == McgatewayV2ReadPhase.BEFORE_RESTORE) && response.statusCode() == 404;
         if (response.statusCode() != 200 && !postDelete404) throw mcgatewayV2StateFail(mcgatewayV2HttpDiagnostic(response.statusCode()));
         java.util.List<String> types = response.headers().allValues("Content-Type"), ages = response.headers().allValues("Age"), dates = response.headers().allValues("Date");
         if (types.size() != 1 || ages.size() > 1 || dates.size() != 1) throw mcgatewayV2StateFail(McgatewayV2StateDiagnostic.HEADERS);
@@ -201,6 +201,8 @@ V2_FRIEND_MANAGER = r'''
     }
 
 '''
+
+V2_FRIEND_MANAGER += (Path(__file__).parent / 'release160/recovery-fragment.java.inc').read_text()
 
 EDITS = [
     # Upstream SessionManager schedules expiry even if MCGateway's console deletion is denied.
@@ -313,6 +315,10 @@ _logger_edit[3] = _logger_edit[3].replace(
     r'''                case "friendstatev160" -> {
                     if (args.length != 2) warn("MCGATEWAY_FRIEND_STATE_V160_V2 nonce=invalid xuid=invalid account=unavailable session=unavailable state=unknown verified=false stage=input category=invalid-request");
                     else info(StandaloneMain.sessionManager.friendManager().mcgatewayFriendStateV2(args[0], args[1]));
+                }
+                case "friendrehearsev160", "friendrestorev160" -> {
+                    if (args.length != 3) warn("MCGATEWAY_FRIEND_RECOVERY_V160_V1 invalid-request");
+                    else info(StandaloneMain.sessionManager.friendManager().mcgatewayFriendRecoveryV1(args[0], args[1], args[2], commandNode.equals("friendrehearsev160")));
                 }
                 case "friendremovev160" -> {
                     if (!"owner-reviewed-v2".equals(System.getenv("MCGATEWAY_RELEASE160_FRIEND_REMOVAL_MODE")) || args.length != 2)

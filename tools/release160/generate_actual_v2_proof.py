@@ -10,6 +10,9 @@ source = module.V2_FRIEND_MANAGER
 boundary = 'HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NEVER).connectTimeout(java.time.Duration.ofSeconds(8)).build()'
 assert source.count(boundary) == 1
 source = source.replace(boundary, 'new ScriptedClient()')
+env_boundary = 'private String mcgatewayRecoveryEnv(String key) { return System.getenv(key); }'
+assert source.count(env_boundary) == 1
+source = source.replace(env_boundary, 'private String mcgatewayRecoveryEnv(String key) { return recoveryEnv.get(key); }')
 header = r'''
 package com.rtm516.mcxboxbroadcast.core;
 import java.net.URI;
@@ -20,6 +23,7 @@ import javax.net.ssl.*;
 public final class FriendStateV2ActualProof {
     private final Map<String,String> toAdd = new HashMap<>(), toRemove = new HashMap<>();
     private final FakeSession sessionManager = new FakeSession();
+    private final Map<String,String> recoveryEnv = new HashMap<>();
     static final String TARGET = "2533270000000000";
     static final class Constants {
         static final String PEOPLE = "https://example.invalid/users/me/people/xuid(%s)";
@@ -80,7 +84,72 @@ footer = r'''
         var f=fixture(before); String result=f.mcgatewayFriendRemoveV2(nonce(),TARGET);
         need(result.contains("result=uncertain")); need(!((ScriptedClient)f.mcgatewayV2HttpClient).methods.contains("DELETE"));
     }
-    public static void main(String[] args){
+    static final String PLAN = "12".repeat(16), PLAN_HASH = "e".repeat(64);
+    static FriendStateV2ActualProof recovery(Answer... replies) throws Exception {
+        var f=fixture(replies);String prefix="MCGATEWAY_RELEASE160_RECOVERY_";
+        f.recoveryEnv.put(prefix+"MODE","owner-reviewed-recovery-v1");
+        f.recoveryEnv.put(prefix+"PLAN_ID",PLAN);f.recoveryEnv.put(prefix+"PLAN_SHA256",PLAN_HASH);
+        f.recoveryEnv.put(prefix+"TARGET_SHA256",mcgatewayV2Hash(TARGET));
+        f.recoveryEnv.put(prefix+"ACCOUNT_SHA256",mcgatewayV2Hash(f.sessionManager.account));
+        f.recoveryEnv.put(prefix+"ISSUED_MS",Long.toString(System.currentTimeMillis()-1000));
+        f.recoveryEnv.put(prefix+"EXPIRES_MS",Long.toString(System.currentTimeMillis()+600000));
+        return f;
+    }
+    static void recoveryProofs() throws Exception {
+        Answer present=answer(200,flags(true,false,false)), missing=answer(404,"{}");
+        var denied=fixture(present);
+        need(denied.mcgatewayFriendRecoveryV1(nonce(),PLAN,TARGET,true).contains("verified=false stage=binding"));
+        need(((ScriptedClient)denied.mcgatewayV2HttpClient).methods.isEmpty());
+        for(String key:List.of("MODE","PLAN_ID","PLAN_SHA256","TARGET_SHA256","ACCOUNT_SHA256","EXPIRES_MS")){
+            var f=recovery(present);f.recoveryEnv.put("MCGATEWAY_RELEASE160_RECOVERY_"+key,"bad");
+            need(f.mcgatewayFriendRecoveryV1(nonce(),PLAN,TARGET,true).contains("verified=false"));
+            need(((ScriptedClient)f.mcgatewayV2HttpClient).methods.isEmpty());
+        }
+        for(long[] dates:List.of(new long[]{1,2},new long[]{System.currentTimeMillis()+60000,System.currentTimeMillis()+120000},new long[]{System.currentTimeMillis()-1000,System.currentTimeMillis()+1000000})){
+            var expired=recovery(present);
+            expired.recoveryEnv.put("MCGATEWAY_RELEASE160_RECOVERY_ISSUED_MS",Long.toString(dates[0]));
+            expired.recoveryEnv.put("MCGATEWAY_RELEASE160_RECOVERY_EXPIRES_MS",Long.toString(dates[1]));
+            need(expired.mcgatewayFriendRecoveryV1(nonce(),PLAN,TARGET,true).contains("verified=false"));
+            need(((ScriptedClient)expired.mcgatewayV2HttpClient).methods.isEmpty());
+        }
+        for(boolean rehearsal:List.of(true,false)){
+            var near=recovery(present);
+            near.recoveryEnv.put("MCGATEWAY_RELEASE160_RECOVERY_EXPIRES_MS",Long.toString(System.currentTimeMillis()+1000));
+            need(near.mcgatewayFriendRecoveryV1(nonce(),PLAN,TARGET,rehearsal).contains("verified=false"));
+            need(((ScriptedClient)near.mcgatewayV2HttpClient).methods.isEmpty());
+        }
+        var wrong=recovery(present);
+        need(wrong.mcgatewayFriendRecoveryV1(nonce(),PLAN,"2533270000000001",true).contains("verified=false"));
+        need(((ScriptedClient)wrong.mcgatewayV2HttpClient).methods.isEmpty());
+        var f=recovery(present,answer(204,"{}"),missing,answer(204,"{}"),present);
+        String n=nonce(),receipt=f.mcgatewayFriendRecoveryV1(n,PLAN,TARGET,true);
+        need(receipt.contains("action=rehearse result=restored pre=present deleteAttempted=true post=present verified=true stage=complete"));
+        need(((ScriptedClient)f.mcgatewayV2HttpClient).methods.equals(List.of("GET","DELETE","GET","PUT","GET")));
+        need(f.mcgatewayFriendRecoveryV1(n,PLAN,TARGET,true).contains("verified=false"));
+        ((ScriptedClient)f.mcgatewayV2HttpClient).answers.add(present);
+        need(f.mcgatewayFriendRecoveryV1(nonce(),PLAN,TARGET,true).contains("verified=false"));
+        need(((ScriptedClient)f.mcgatewayV2HttpClient).methods.stream().filter("DELETE"::equals).count()==1);
+
+        var pending=recovery(answer(200,flags(false,true,false)));
+        need(pending.mcgatewayFriendRecoveryV1(nonce(),PLAN,TARGET,false).contains("verified=false stage=pre"));
+        need(((ScriptedClient)pending.mcgatewayV2HttpClient).methods.equals(List.of("GET")));
+        for(Answer post:List.of(answer(200,flags(false,true,false)),missing,answer(200,"{}"),answer(500,"{}"))){
+            var bad=recovery(missing,answer(204,"{}"),post);
+            need(bad.mcgatewayFriendRecoveryV1(nonce(),PLAN,TARGET,false).contains("verified=false"));
+        }
+        // Exhausting scripted replies models transport loss after deletion.
+        // No verified receipt exists; the independent root journal must retain
+        // RESTORE_REQUIRED. A fresh process may restore the SAME sealed target.
+        var lost=recovery(present,answer(204,"{}"));
+        need(lost.mcgatewayFriendRecoveryV1(nonce(),PLAN,TARGET,true).contains("deleteAttempted=true post=unknown verified=false"));
+        var restarted=recovery(missing,answer(204,"{}"),present);restarted.sessionManager.session="new-session";
+        need(restarted.mcgatewayFriendRecoveryV1(nonce(),PLAN,TARGET,false).contains("action=restore result=restored pre=unknown deleteAttempted=false post=present verified=true"));
+        var already=recovery(present);
+        need(already.mcgatewayFriendRecoveryV1(nonce(),PLAN,TARGET,false).contains("result=already-restored"));
+        need(((ScriptedClient)already.mcgatewayV2HttpClient).methods.equals(List.of("GET")));
+        System.out.println("PASS: actual exact-target recovery methods; disabled/binding/replay/pending/loss/restart/strict post-GET gates");
+    }
+    public static void main(String[] args) throws Exception {
         Answer present=answer(200,flags(true,false,false)), missing=answer(404,"{}");
         var observed=fixture(missing);
         need(observed.mcgatewayFriendStateV2(nonce(),TARGET).contains("state=unknown verified=false stage=response category=http-404"));
@@ -109,6 +178,7 @@ footer = r'''
         }
         var explicit=fixture(present,answer(204,"{}"),answer(200,flags(false,false,false)));
         need(explicit.mcgatewayFriendRemoveV2(nonce(),TARGET).contains("post=absent verified=true"));
+        recoveryProofs();
         System.out.println("PASS: actual overlay methods, scripted HTTP only; asymmetric404/pending/freshness/identity/URI gates");
     }
 }

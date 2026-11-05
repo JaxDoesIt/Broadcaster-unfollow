@@ -16,3 +16,21 @@ New generated harness exercises exact overlay methods with scripted HTTP/session
 boundaries, not live Xbox. Heavy tests run offhost. Required before rollout:
 exact-source CI, paired consumer receipt/framing changes, immutable image, protected
 installation and one vetted non-owner removal/re-add/access/rollback proof.
+
+## Exact-target recovery/rehearsal source continuation
+
+New recovery commands are DEFAULT DENIED. A root-authored immutable descriptor
+binds plan ID/hash, exact target/account hashes and issued/expiry (max15min).
+Session is checked per invocation; account must persist across a recovery restart.
+The mutable root journal must be separate from the hashed descriptor.
+Rehearse performs strict positive/no-pending GET, DELETE, absence GET, PUT, then
+strict friend/no-pending GET. Restore cannot DELETE and never certifies a rehearsal.
+Pending pre-state causes no repeated PUT. PUT status alone never proves recovery.
+One rehearsal DELETE attempt per process; durable cross-restart replay fencing
+MUST be supplied by the independent root journal BEFORE ANY LIVE invocation.
+
+LIVE IS BLOCKED: no sealed plan writer, armed independent restore supervisor,
+root recovery attestation, permit issuer or protected final candidate promotion
+is installed. A payload parser or source/image CI is not a root attestation.
+Owner control remains excluded. Actual removal's unknown state must NOT trigger
+an asynchronous restore racing a late Control Bot commit.

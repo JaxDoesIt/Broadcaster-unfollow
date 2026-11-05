@@ -10,6 +10,33 @@ def check(value,message):
 def clone(source,target): shutil.copytree(source,target,ignore=shutil.ignore_patterns('.git','build','.gradle'))
 FILES=[Path(item) for item in ('core/src/main/java/com/rtm516/mcxboxbroadcast/core/SessionManager.java','core/src/main/java/com/rtm516/mcxboxbroadcast/core/FriendManager.java','core/src/main/java/com/rtm516/mcxboxbroadcast/core/SessionManagerCore.java','core/src/main/java/com/rtm516/mcxboxbroadcast/core/nethernet/HttpRelaySignaling.java','bootstrap/standalone/src/main/java/com/rtm516/mcxboxbroadcast/bootstrap/standalone/StandaloneLoggerImpl.java','core/src/main/java/com/rtm516/mcxboxbroadcast/core/configs/ConfigLoader.java')]
 def digest(root): return {item:hashlib.sha256((root/item).read_bytes()).hexdigest() for item in FILES}
+def java_method(text, signature):
+    begin = text.index(signature)
+    pos = text.index('{', begin)
+    depth = 0
+    state = 'code'
+    quote = None
+    index = pos
+    while index < len(text):
+        char = text[index]
+        pair = text[index:index + 2]
+        if state == 'line':
+            if char == '\n': state = 'code'
+        elif state == 'comment':
+            if pair == '*/': state = 'code'; index += 1
+        elif state == 'string':
+            if char == '\\': index += 1
+            elif char == quote: state = 'code'
+        elif pair == '//': state = 'line'; index += 1
+        elif pair == '/*': state = 'comment'; index += 1
+        elif char in ('"', "'"): state = 'string'; quote = char
+        elif char == '{': depth += 1
+        elif char == '}':
+            depth -= 1
+            if depth == 0: return text[begin:index + 1]
+        index += 1
+    raise AssertionError('unterminated Java method')
+
 def main():
     if len(sys.argv)!=2: raise SystemExit('usage: test_release160_patch.py <release160-upstream>')
     upstream=Path(sys.argv[1]).resolve()
@@ -38,13 +65,15 @@ def main():
         current_patch=PATCH.read_text()
         baseline_patch=subprocess.check_output(['git','show','HEAD:tools/apply_mcgateway_release160_patch.py'],cwd=PATCH.parent.parent,text=True)
         remove_start='    public String mcgatewayFriendRemoveV2'
-        remove_end='    public void init(CoreConfig.FriendSyncConfig friendSyncConfig) {'
-        check(current_patch[current_patch.index(remove_start):current_patch.index(remove_end)] == baseline_patch[baseline_patch.index(remove_start):baseline_patch.index(remove_end)],'GET diagnostics must not alter V2 removal command source')
+        check(java_method(current_patch, remove_start) == java_method(baseline_patch, remove_start),'GET/recovery changes must not alter existing V2 removal method bytes')
         check('ReentrantReadWriteLock mcgatewayV2Lock' in friend and 'mcgatewayV2Lock.writeLock().tryLock()' in friend and 'mcgatewayV2Lock.readLock().lock()' in friend and all(('MCGATEWAY_RELEASE160_V2_ADD_LOCK' in friend, 'MCGATEWAY_RELEASE160_V2_ADD_IF_REQUIRED_LOCK' in friend, 'MCGATEWAY_RELEASE160_V2_REMOVE_LOCK' in friend, 'MCGATEWAY_RELEASE160_V2_INTERNAL_LOCK' in friend)),'v2 mutation serialization missing')
-        check('phase == McgatewayV2ReadPhase.AFTER_DELETE && response.statusCode() == 404' in friend,'404 must be post-delete only')
+        check('(phase == McgatewayV2ReadPhase.AFTER_DELETE || phase == McgatewayV2ReadPhase.BEFORE_RESTORE) && response.statusCode() == 404' in friend,'404 must be post-delete only')
         check('McgatewayV2ReadPhase.BEFORE_DELETE' in friend and 'McgatewayV2ReadPhase.OBSERVE' in friend,'read phase must be explicit')
         check('result=already-absent pre=absent' not in friend,'no admission/confirmation from absent pre-state')
         check('basis=target-404-after-delete' in friend and 'new McgatewayV2State("friendship-absent", false)' in friend,'separate friendship-only proof missing')
+        check('owner-reviewed-recovery-v1' in friend and 'mcgatewayRecoveryBinding' in friend and 'TARGET_SHA256' in friend and 'ACCOUNT_SHA256' in friend,'exact recovery bindings missing')
+        check('mcgatewayRecoveryRehearsalUsed = true' in friend and 'if (!restored.removable())' in friend,'rehearsal replay or strict post-GET gate missing')
+        check('friendrehearsev160' in logger and 'friendrestorev160' in logger and 'commandNode.equals("friendrehearsev160")' in logger,'closed recovery command routing missing')
         check('friendRequestSent' in friend and 'friendRequestReceived' in friend and 'response.statusCode() != 200' in friend,'strict target state guards missing')
         check('mcgatewayV2BodyHandler()' in friend and 'MCGATEWAY_V2_MAX_BODY_BYTES = 16 * 1024' in friend and 'future.cancel(true)' in friend,'v2 response/deadline bound missing')
         check('mcgatewayV2Skip' in friend and 'if (depth > 8)' in friend and 'if (++count > 64)' in friend and 'if (!names.add(r.nextName()))' in friend,'v2 JSON depth/duplicate bounds missing')
