@@ -149,7 +149,14 @@ V2_FRIEND_MANAGER = r'''
         // A 404 NEVER supplies observation or mutation admission. Only an exact
         // post-read following strict pre-state + successful DELETE may use it.
         boolean postDelete404 = (phase == McgatewayV2ReadPhase.AFTER_DELETE || phase == McgatewayV2ReadPhase.BEFORE_RESTORE) && response.statusCode() == 404;
-        if (response.statusCode() != 200 && !postDelete404) throw mcgatewayV2StateFail(mcgatewayV2HttpDiagnostic(response.statusCode()));
+        // Xbox's post-delete target GET may be a header-light 404. The exact URI,
+        // phase and stable session identity are the bounded absence evidence;
+        // body freshness headers are not present to parse on this response.
+        if (postDelete404) {
+            if (!account.equals(sessionManager.getXuid()) || !session.equals(sessionManager.mcgatewayV2SessionIdentity())) throw mcgatewayV2StateFail(McgatewayV2StateDiagnostic.IDENTITY_CHANGED);
+            return new McgatewayV2State("friendship-absent", false);
+        }
+        if (response.statusCode() != 200) throw mcgatewayV2StateFail(mcgatewayV2HttpDiagnostic(response.statusCode()));
         java.util.List<String> types = response.headers().allValues("Content-Type"), ages = response.headers().allValues("Age"), dates = response.headers().allValues("Date");
         if (types.size() != 1 || ages.size() > 1 || dates.size() != 1) throw mcgatewayV2StateFail(McgatewayV2StateDiagnostic.HEADERS);
         String type = types.get(0).split(";", 2)[0].trim().toLowerCase(java.util.Locale.ROOT); long age;
@@ -160,9 +167,6 @@ V2_FRIEND_MANAGER = r'''
         if (age != 0) throw mcgatewayV2StateFail(McgatewayV2StateDiagnostic.AGE);
         if (Math.abs(System.currentTimeMillis() - dateMs) > 60_000L) throw mcgatewayV2StateFail(McgatewayV2StateDiagnostic.DATE);
         if (!account.equals(sessionManager.getXuid()) || !session.equals(sessionManager.mcgatewayV2SessionIdentity())) throw mcgatewayV2StateFail(McgatewayV2StateDiagnostic.IDENTITY_CHANGED);
-        // Microsoft documents target GET404 as absent from the owner People list.
-        // It does not establish the values of either pending-request flag.
-        if (postDelete404) return new McgatewayV2State("friendship-absent", false);
         return mcgatewayV2Parse(mcgatewayV2Utf8(response.body()), target);
     }
     private String mcgatewayV2Failure(String marker, String nonce, String target, String account, String session, String pre) {

@@ -68,6 +68,7 @@ def main():
         check(java_method(current_patch, remove_start) == java_method(baseline_patch, remove_start),'GET/recovery changes must not alter existing V2 removal method bytes')
         check('ReentrantReadWriteLock mcgatewayV2Lock' in friend and 'mcgatewayV2Lock.writeLock().tryLock()' in friend and 'mcgatewayV2Lock.readLock().lock()' in friend and all(('MCGATEWAY_RELEASE160_V2_ADD_LOCK' in friend, 'MCGATEWAY_RELEASE160_V2_ADD_IF_REQUIRED_LOCK' in friend, 'MCGATEWAY_RELEASE160_V2_REMOVE_LOCK' in friend, 'MCGATEWAY_RELEASE160_V2_INTERNAL_LOCK' in friend)),'v2 mutation serialization missing')
         check('(phase == McgatewayV2ReadPhase.AFTER_DELETE || phase == McgatewayV2ReadPhase.BEFORE_RESTORE) && response.statusCode() == 404' in friend,'404 must be post-delete only')
+        check(friend.index('if (postDelete404)') < friend.index('allValues("Content-Type")'),'post-delete 404 must not require response freshness headers')
         check('McgatewayV2ReadPhase.BEFORE_DELETE' in friend and 'McgatewayV2ReadPhase.OBSERVE' in friend,'read phase must be explicit')
         check('result=already-absent pre=absent' not in friend,'no admission/confirmation from absent pre-state')
         check('basis=target-404-after-delete' in friend and 'new McgatewayV2State("friendship-absent", false)' in friend,'separate friendship-only proof missing')

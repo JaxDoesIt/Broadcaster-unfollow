@@ -193,16 +193,22 @@ footer = r'''
             need(((ScriptedClient)f.mcgatewayV2HttpClient).methods.equals(List.of("GET","DELETE","GET")));
             need(f.mcgatewayFriendRemoveV2("bad",TARGET).contains("verified=false"));
         }
-        for(Answer bad:List.of(answer(200,flags(true,false,false)),answer(200,flags(false,true,false)),answer(200,flags(false,false,true)),answer(200,"{}"),answer(403,"{}"),answer(429,"{}"),answer(500,"{}"),
+        for(Answer postDelete404:List.of(
+            new Answer(404,"","","","",false,false),
             new Answer(404,"{}","text/html","0",missing.date(),false,false),
             new Answer(404,"{}","application/json","1",missing.date(),false,false),
-            new Answer(404,"{}","application/json","0","Mon, 1 Jan 2001 00:00:00 GMT",false,false),
+            new Answer(404,"{}","application/json","0","Mon, 1 Jan 2001 00:00:00 GMT",false,false))){
+            var f=fixture(present,answer(204,"{}"),postDelete404);
+            need(f.mcgatewayFriendRemoveV2(nonce(),TARGET).contains("result=removed pre=present post=friendship-absent verified=true basis=target-404-after-delete"));
+            need(((ScriptedClient)f.mcgatewayV2HttpClient).methods.equals(List.of("GET","DELETE","GET")));
+        }
+        for(Answer bad:List.of(answer(200,flags(true,false,false)),answer(200,flags(false,true,false)),answer(200,flags(false,false,true)),answer(200,"{}"),answer(403,"{}"),answer(429,"{}"),answer(500,"{}"),
             new Answer(404,"{}","application/json","0",missing.date(),true,false),
             new Answer(404,"{}","application/json","0",missing.date(),false,true))){
             var f=fixture(present,answer(204,"{}"),bad);
             need(f.mcgatewayFriendRemoveV2(nonce(),TARGET).contains("result=uncertain"));
         }
-        for(int status:new int[]{201,404,429,500}){
+        for(int status:new int[]{201,429,500}){
             var f=fixture(present,answer(status,"{}"));
             need(f.mcgatewayFriendRemoveV2(nonce(),TARGET).contains("result=uncertain"));
             need(((ScriptedClient)f.mcgatewayV2HttpClient).methods.size()==2);
