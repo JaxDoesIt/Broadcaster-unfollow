@@ -67,7 +67,16 @@
                 deleteAttempted = true;
                 mcgatewayRecoveryMutation("DELETE", plan, target, rawAccount, rawSession, deadline);
                 stage = McgatewayRecoveryStage.absence;
-                McgatewayV2State absent = mcgatewayV2Read(target, rawAccount, rawSession, deadline, McgatewayV2ReadPhase.AFTER_DELETE);
+                McgatewayV2State absent;
+                // Xbox may briefly continue serving the pre-remove flags after
+                // the accepted DELETE. Poll the same exact target within the
+                // existing recovery deadline; never reissue DELETE.
+                do {
+                    absent = mcgatewayV2Read(target, rawAccount, rawSession, deadline, McgatewayV2ReadPhase.AFTER_DELETE);
+                    if (absent.state().equals("absent") || absent.state().equals("friendship-absent")) break;
+                    if (mcgatewayV2Remaining(deadline) < 750L) throw new IllegalStateException("absence");
+                    Thread.sleep(250L);
+                } while (true);
                 if (!absent.state().equals("absent") && !absent.state().equals("friendship-absent")) throw new IllegalStateException("absence");
                 mcgatewayRecoveryStable(plan, target, rawAccount, rawSession);
                 logger.info("MCGATEWAY_FRIEND_RECOVERY_SETTLED_V1 nonce=" + nonce + " plan=" + plan + " planHash=" + planHash

@@ -136,6 +136,9 @@ footer = r'''
         need(f.logger.lines.get(0).endsWith("pre=present isFriend=true friendRequestSent=false friendRequestReceived=false deleteNext=true verified=true stage=pre-delete"));
         need(f.logger.lines.get(1).contains("MCGATEWAY_FRIEND_RECOVERY_SETTLED_V1 nonce="+n));
         need(f.logger.calls.equals(List.of(List.of("GET"),List.of("GET","DELETE","GET"))));
+        var delayed=recovery(present,answer(204,"{}"),present,missing,answer(204,"{}"),present);
+        need(delayed.mcgatewayFriendRecoveryV1(nonce(),PLAN,TARGET,true).contains("action=rehearse result=restored pre=present deleteAttempted=true post=present verified=true stage=complete"));
+        need(((ScriptedClient)delayed.mcgatewayV2HttpClient).methods.equals(List.of("GET","DELETE","GET","GET","PUT","GET")));
 
         need(((ScriptedClient)f.mcgatewayV2HttpClient).methods.equals(List.of("GET","DELETE","GET","PUT","GET")));
         need(f.mcgatewayFriendRecoveryV1(n,PLAN,TARGET,true).contains("verified=false"));

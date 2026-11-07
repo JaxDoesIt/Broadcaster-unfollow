@@ -74,6 +74,7 @@ def main():
         check('basis=target-404-after-delete' in friend and 'new McgatewayV2State("friendship-absent", false)' in friend,'separate friendship-only proof missing')
         check('owner-reviewed-recovery-v1' in friend and 'mcgatewayRecoveryBinding' in friend and 'TARGET_SHA256' in friend and 'ACCOUNT_SHA256' in friend,'exact recovery bindings missing')
         check('mcgatewayRecoveryRehearsalUsed = true' in friend and 'if (!restored.removable())' in friend,'rehearsal replay or strict post-GET gate missing')
+        check('Thread.sleep(250L)' in friend and 'never reissue DELETE' in friend,'post-delete propagation poll missing')
         check('friendrehearsev160' in logger and 'friendrestorev160' in logger and 'commandNode.equals("friendrehearsev160")' in logger,'closed recovery command routing missing')
         check('friendRequestSent' in friend and 'friendRequestReceived' in friend and 'response.statusCode() != 200' in friend,'strict target state guards missing')
         check('mcgatewayV2BodyHandler()' in friend and 'MCGATEWAY_V2_MAX_BODY_BYTES = 16 * 1024' in friend and 'future.cancel(true)' in friend,'v2 response/deadline bound missing')
