@@ -213,8 +213,17 @@ V2_FRIEND_MANAGER = r'''
             URI uri = URI.create(Constants.FRIEND.formatted(target)); HttpRequest request = HttpRequest.newBuilder().uri(uri).timeout(java.time.Duration.ofMillis(Math.min(8_000L, mcgatewayV2Remaining(deadline)))).header("Authorization", sessionManager.getTokenHeader()).DELETE().build();
             HttpResponse<byte[]> deleted = mcgatewayV2Send(request, deadline);
             if ((deleted.statusCode() != 200 && deleted.statusCode() != 204) || !uri.equals(deleted.uri()) || !raw.equals(sessionManager.getXuid()) || !rawSession.equals(sessionManager.mcgatewayV2SessionIdentity())) throw new IllegalStateException("delete");
-            McgatewayV2State after = mcgatewayV2Read(target, raw, rawSession, deadline, McgatewayV2ReadPhase.AFTER_DELETE);
-            if (!after.state().equals("absent") && !after.state().equals("friendship-absent")) throw new IllegalStateException("post");
+            McgatewayV2State after;
+            // Xbox may briefly keep serving the pre-remove relationship after
+            // an accepted DELETE. Poll the same target within the existing
+            // deadline; never reissue DELETE.
+            do {
+                after = mcgatewayV2Read(target, raw, rawSession, deadline, McgatewayV2ReadPhase.AFTER_DELETE);
+                if (after.state().equals("absent") || after.state().equals("friendship-absent")) break;
+                if (mcgatewayV2Remaining(deadline) < 750L) throw new IllegalStateException("post");
+                try { Thread.sleep(250L); }
+                catch (InterruptedException interrupted) { Thread.currentThread().interrupt(); throw interrupted; }
+            } while (true);
             return "MCGATEWAY_FRIEND_REMOVE_V160_V2 nonce=" + nonce + " xuid=" + target + " account=" + account + " session=" + session + " result=removed pre=present post=" + after.state() + " verified=true" + (after.state().equals("friendship-absent") ? " basis=target-404-after-delete" : "");
         } catch (Exception e) { return mcgatewayV2Failure("MCGATEWAY_FRIEND_REMOVE_V160_V2", mcgatewayV2Nonce(nonce) ? nonce : "invalid", mcgatewayV2Xuid(target) ? target : "invalid", account, session, pre); }
         finally { mcgatewayV2Lock.writeLock().unlock(); }
