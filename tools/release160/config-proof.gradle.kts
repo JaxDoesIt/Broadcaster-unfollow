@@ -35,3 +35,10 @@ tasks.register<JavaExec>("mcgatewayFriendStateV2Actual") {
     mainClass.set("com.rtm516.mcxboxbroadcast.core.FriendStateV2ActualProof")
     maxHeapSize = "256m"
 }
+
+tasks.register<JavaExec>("mcgatewayFriendNonceWindow") {
+    dependsOn(mcgatewayProof.classesTaskName)
+    classpath = mcgatewayProof.runtimeClasspath
+    mainClass.set("com.rtm516.mcxboxbroadcast.core.FriendNonceWindowProof")
+    maxHeapSize = "256m"
+}

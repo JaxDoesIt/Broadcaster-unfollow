@@ -8,10 +8,28 @@ from pathlib import Path
 V2_FRIEND_MANAGER = r'''
     // MCGATEWAY_RELEASE160_FRIEND_REMOVE_V2: strict, target-scoped proof.
     private static final int MCGATEWAY_V2_MAX_BODY_BYTES = 16 * 1024;
-    private static final int MCGATEWAY_V2_MAX_NONCES = 256;
+    private static final int MCGATEWAY_V2_MAX_NONCES = 4_096;
+    private static final long MCGATEWAY_V2_NONCE_TTL_MS = 15L * 60L * 1_000L;
     private final java.util.concurrent.locks.ReentrantReadWriteLock mcgatewayV2Lock = new java.util.concurrent.locks.ReentrantReadWriteLock();
-    private final Object mcgatewayV2NonceLock = new Object();
-    private final java.util.Set<String> mcgatewayV2Nonces = new java.util.HashSet<>();
+    static final class McgatewayV2NonceWindow {
+        private final java.util.LinkedHashMap<String, Long> consumed = new java.util.LinkedHashMap<>();
+        synchronized boolean consume(String nonce) { return consume(nonce, System.currentTimeMillis()); }
+        synchronized boolean consume(String nonce, long nowMs) {
+            if (!mcgatewayV2Nonce(nonce)) return false;
+            consumed.entrySet().removeIf(entry -> nowMs - entry.getValue() >= MCGATEWAY_V2_NONCE_TTL_MS);
+            if (consumed.containsKey(nonce)) return false;
+            while (consumed.size() >= MCGATEWAY_V2_MAX_NONCES) {
+                java.util.Iterator<String> oldest = consumed.keySet().iterator();
+                if (!oldest.hasNext()) break;
+                oldest.next();
+                oldest.remove();
+            }
+            consumed.put(nonce, nowMs);
+            return true;
+        }
+        synchronized int size() { return consumed.size(); }
+    }
+    private final McgatewayV2NonceWindow mcgatewayV2Nonces = new McgatewayV2NonceWindow();
     private final HttpClient mcgatewayV2HttpClient = HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NEVER).connectTimeout(java.time.Duration.ofSeconds(8)).build();
     private record McgatewayV2State(String state, boolean removable) { }
     private enum McgatewayV2ReadPhase { OBSERVE, BEFORE_DELETE, AFTER_DELETE, BEFORE_RESTORE }
@@ -54,12 +72,10 @@ V2_FRIEND_MANAGER = r'''
     private static boolean mcgatewayV2Nonce(String value) { return value != null && value.matches("[0-9a-f]{32}"); }
     private static boolean mcgatewayV2Xuid(String value) { return value != null && value.matches("[1-9][0-9]{0,19}"); }
     private boolean mcgatewayV2Consume(String nonce) {
-        // Deliberately memory-only: the controller owns durable command intent.
-        // Never evict a nonce; capacity exhaustion fails closed.
-        synchronized (mcgatewayV2NonceLock) {
-            if (!mcgatewayV2Nonce(nonce) || mcgatewayV2Nonces.contains(nonce) || mcgatewayV2Nonces.size() >= MCGATEWAY_V2_MAX_NONCES) return false;
-            mcgatewayV2Nonces.add(nonce); return true;
-        }
+        // The controller owns the durable replay fence. This process-local
+        // window only rejects recent duplicate console requests; expiry keeps
+        // a long-lived bot from permanently exhausting command capacity.
+        return mcgatewayV2Nonces.consume(nonce);
     }
     private static String mcgatewayV2Hash(String value) throws Exception {
         byte[] bytes = java.security.MessageDigest.getInstance("SHA-256").digest(value.getBytes(java.nio.charset.StandardCharsets.UTF_8));

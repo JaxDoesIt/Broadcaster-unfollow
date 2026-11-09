@@ -77,6 +77,9 @@ def main():
         check('Thread.sleep(250L)' in friend and 'never reissue DELETE' in friend,'post-delete propagation poll missing')
         check('friendrehearsev160' in logger and 'friendrestorev160' in logger and 'commandNode.equals("friendrehearsev160")' in logger,'closed recovery command routing missing')
         check('friendRequestSent' in friend and 'friendRequestReceived' in friend and 'response.statusCode() != 200' in friend,'strict target state guards missing')
+        check('McgatewayV2NonceWindow' in friend and 'MCGATEWAY_V2_MAX_NONCES = 4_096' in friend and 'MCGATEWAY_V2_NONCE_TTL_MS = 15L * 60L * 1_000L' in friend,'bounded expiring nonce window missing')
+        check('consumed.entrySet().removeIf' in friend and 'consumed.size() >= MCGATEWAY_V2_MAX_NONCES' in friend and 'oldest.remove()' in friend,'nonce expiry/capacity eviction missing')
+        check('mcgatewayV2Nonces.consume(nonce)' in friend and 'Never evict a nonce; capacity exhaustion fails closed' not in friend,'legacy nonce exhaustion behavior remains')
         check('mcgatewayV2BodyHandler()' in friend and 'MCGATEWAY_V2_MAX_BODY_BYTES = 16 * 1024' in friend and 'future.cancel(true)' in friend,'v2 response/deadline bound missing')
         check('mcgatewayV2Skip' in friend and 'if (depth > 8)' in friend and 'if (++count > 64)' in friend and 'if (!names.add(r.nextName()))' in friend,'v2 JSON depth/duplicate bounds missing')
         check('TimeUnit.SECONDS.toNanos(20)' in friend and 'Math.min(8_000L, mcgatewayV2Remaining(deadline))' in friend,'absolute/individual request budgets missing')
@@ -97,6 +100,8 @@ def main():
         check('if (originallyEmpty) {' in config and 'currentVersion != newVersion' not in config[config.index('if (originallyEmpty) {'):],'config persistence guard missing')
         workflow_text=workflow.read_text()
         check('FriendRemovalV2ContractProof.java' in workflow_text and 'FriendRemovalV2InterleavingProof.java' in workflow_text and 'mcgatewayFriendRemovalV2Interleaving' in workflow_text,'V2 proof workflow wiring missing')
+        check('FriendNonceWindowProof.java' in workflow_text and 'mcgatewayFriendNonceWindow' in workflow_text,'nonce-window proof workflow wiring missing')
+        check('friend-state-v2-nonce-window-v1' in workflow_text,'nonce-window candidate image label missing')
         check('Registry lookup did not prove the candidate tag absent.' in workflow_text and 'docker buildx imagetools inspect "$IMAGE"' in workflow_text,'immutable candidate workflow fence missing')
     with tempfile.TemporaryDirectory(prefix='mcgateway160-bad.') as temp:
         root=Path(temp)/'source';clone(upstream,root);target=root/FILES[0];target.write_text(target.read_text()+'\n// MCGATEWAY_RELEASE160_READONLY_OVERLAY\n');before=digest(root)
