@@ -3,9 +3,9 @@ package com.rtm516.mcxboxbroadcast.core;
 /** Offline proof of the terminal V2 policy; it has no HTTP or token access. */
 public final class FriendRemovalV2ContractProof {
     private FriendRemovalV2ContractProof() { }
-    record State(String value, boolean removable) { }
+    record State(String value, boolean removable, boolean friend) { }
     static State state(boolean friend, boolean sent, boolean received) {
-        return new State(friend || sent || received ? "present" : "absent", friend && !sent && !received);
+        return new State(friend || sent || received ? "present" : "absent", friend && !sent && !received, friend);
     }
     static String terminal(String before, int deleteStatus, String after, boolean accountStable, boolean sessionStable) {
         // Production requires strict positive admission even for a no-op.
@@ -25,6 +25,7 @@ public final class FriendRemovalV2ContractProof {
             State current = state(friend, sent, received);
             need(current.value().equals(bits == 0 ? "absent" : "present"));
             need(current.removable() == (friend && !sent && !received));
+            need(current.friend() == friend);
         }
         need(terminal("absent", 0, "absent", true, true).equals("uncertain"));
         need(terminal("present", 200, "absent", true, true).equals("removed"));

@@ -31,7 +31,7 @@ V2_FRIEND_MANAGER = r'''
     }
     private final McgatewayV2NonceWindow mcgatewayV2Nonces = new McgatewayV2NonceWindow();
     private final HttpClient mcgatewayV2HttpClient = HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NEVER).connectTimeout(java.time.Duration.ofSeconds(8)).build();
-    private record McgatewayV2State(String state, boolean removable) { }
+    private record McgatewayV2State(String state, boolean removable, boolean friend) { }
     private enum McgatewayV2ReadPhase { OBSERVE, BEFORE_DELETE, AFTER_DELETE, BEFORE_RESTORE }
     private enum McgatewayV2StateDiagnostic {
         INVALID_REQUEST("input", "invalid-request"), NONCE_REJECTED("input", "nonce-rejected"),
@@ -147,7 +147,7 @@ V2_FRIEND_MANAGER = r'''
                 } else mcgatewayV2Skip(r, 0);
             } r.endObject();
             if (r.peek() != com.google.gson.stream.JsonToken.END_DOCUMENT || !target.equals(xuid) || friend == null || sent == null || received == null) throw mcgatewayV2StateFail(McgatewayV2StateDiagnostic.SCHEMA);
-            return new McgatewayV2State(friend || sent || received ? "present" : "absent", friend && !sent && !received);
+            return new McgatewayV2State(friend || sent || received ? "present" : "absent", friend && !sent && !received, friend);
         } catch (McgatewayV2StateException error) { throw error; }
         catch (Exception error) { throw mcgatewayV2StateFail(McgatewayV2StateDiagnostic.JSON); }
     }
@@ -170,7 +170,7 @@ V2_FRIEND_MANAGER = r'''
         // body freshness headers are not present to parse on this response.
         if (postDelete404) {
             if (!account.equals(sessionManager.getXuid()) || !session.equals(sessionManager.mcgatewayV2SessionIdentity())) throw mcgatewayV2StateFail(McgatewayV2StateDiagnostic.IDENTITY_CHANGED);
-            return new McgatewayV2State("friendship-absent", false);
+            return new McgatewayV2State("friendship-absent", false, false);
         }
         if (response.statusCode() != 200) throw mcgatewayV2StateFail(mcgatewayV2HttpDiagnostic(response.statusCode()));
         java.util.List<String> types = response.headers().allValues("Content-Type"), ages = response.headers().allValues("Age"), dates = response.headers().allValues("Date");
@@ -208,7 +208,10 @@ V2_FRIEND_MANAGER = r'''
         String account = "unavailable", session = "unavailable", pre = "unknown";
         try { long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(20); String raw = sessionManager.getXuid(), rawSession = sessionManager.mcgatewayV2SessionIdentity(); account = mcgatewayV2Hash(raw); session = mcgatewayV2Hash(rawSession);
             McgatewayV2State before = mcgatewayV2Read(target, raw, rawSession, deadline, McgatewayV2ReadPhase.BEFORE_DELETE); pre = before.state();
-            if (!before.removable()) throw new IllegalStateException("pending");
+            // A real friendship remains removable when a pending request flag is
+            // also present. The same DELETE endpoint unfriends and declines a
+            // pending request; request-only entries still fail closed.
+            if (!before.friend()) throw new IllegalStateException("pre-not-friend");
             if (toAdd.containsKey(target) || toRemove.containsKey(target) || !raw.equals(sessionManager.getXuid()) || !rawSession.equals(sessionManager.mcgatewayV2SessionIdentity())) throw new IllegalStateException("identity-before-delete");
             URI uri = URI.create(Constants.FRIEND.formatted(target)); HttpRequest request = HttpRequest.newBuilder().uri(uri).timeout(java.time.Duration.ofMillis(Math.min(8_000L, mcgatewayV2Remaining(deadline)))).header("Authorization", sessionManager.getTokenHeader()).DELETE().build();
             HttpResponse<byte[]> deleted = mcgatewayV2Send(request, deadline);
