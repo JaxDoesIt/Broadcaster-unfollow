@@ -56,6 +56,13 @@ Upstream pinned SessionManager.java schedules expireFriends() independently of c
 
 **v2 IMAGE**: `ghcr.io/jaxdoesit/mcgateway-broadcast:release-160-relay-audit-expiry-held-v2` (new immutable candidate tag; never overwrite v1 or test/stable). CI build and digest must be independently verified before treating it as built. Never deploy automatically.
 
+The current request-only cleanup build is the immutable candidate
+`ghcr.io/jaxdoesit/mcgateway-broadcast:release-160-friend-state-v2-nonce-window-1f8db061abee3bfc1428ab8970ea7e3bd58c507e`.
+Its OCI index digest is
+`sha256:be4a970f0a806f591f12d0594100d4577a84f86001b6bfa4525c2e064d711157`
+and its linux/amd64 manifest is
+`sha256:2adbb3e1440b45417e03421abe149d1daf7b317e064abc39013dfca0347c0f8b`.
+
 ## Present-relationship removal correction (2026-11-09)
 
 The exact-target removal command now admits any target whose aggregate state is
