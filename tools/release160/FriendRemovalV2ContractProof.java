@@ -26,6 +26,7 @@ public final class FriendRemovalV2ContractProof {
             need(current.value().equals(bits == 0 ? "absent" : "present"));
             need(current.removable() == (friend && !sent && !received));
             need(current.friend() == friend);
+            need((current.value().equals("present")) == (bits != 0));
         }
         need(terminal("absent", 0, "absent", true, true).equals("uncertain"));
         need(terminal("present", 200, "absent", true, true).equals("removed"));

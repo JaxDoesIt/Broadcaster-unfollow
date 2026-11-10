@@ -56,11 +56,11 @@ Upstream pinned SessionManager.java schedules expireFriends() independently of c
 
 **v2 IMAGE**: `ghcr.io/jaxdoesit/mcgateway-broadcast:release-160-relay-audit-expiry-held-v2` (new immutable candidate tag; never overwrite v1 or test/stable). CI build and digest must be independently verified before treating it as built. Never deploy automatically.
 
-## Pending-request removal correction (2026-11-09)
+## Present-relationship removal correction (2026-11-09)
 
-The exact-target removal command now admits any target where `isFriend=true`,
-even if Xbox also reports a pending request flag. Xbox uses the same
-exact-target DELETE for unfriending and declining a pending request.
-Request-only entries still fail closed because they do not contain a real
-friendship. Recovery verification continues to require `isFriend=true` with both
-pending flags false.
+The exact-target removal command now admits any target whose aggregate state is
+`present`, including an accepted friendship and request-only entries. Xbox uses
+the same exact-target DELETE for unfriending and declining a pending request.
+An already-absent target still fails closed at the admission boundary.
+Recovery verification continues to require `isFriend=true` with both pending
+flags false.

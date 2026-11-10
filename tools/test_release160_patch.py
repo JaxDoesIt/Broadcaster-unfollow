@@ -74,7 +74,7 @@ def main():
         check('result=already-absent pre=absent' not in friend,'no admission/confirmation from absent pre-state')
         check('basis=target-404-after-delete' in friend and 'new McgatewayV2State("friendship-absent", false, false)' in friend,'separate friendship-only proof missing')
         check('private record McgatewayV2State(String state, boolean removable, boolean friend)' in friend,'friendship bit missing from target state')
-        check('if (!before.friend()) throw new IllegalStateException("pre-not-friend")' in friend,'removal admission must require a real friendship')
+        check('if (!before.state().equals("present")) throw new IllegalStateException("pre-not-present")' in friend,'removal admission must accept any present relationship')
         check('friend && !sent && !received, friend' in friend,'request-only state must remain distinct from friendship')
         check('owner-reviewed-recovery-v1' in friend and 'mcgatewayRecoveryBinding' in friend and 'TARGET_SHA256' in friend and 'ACCOUNT_SHA256' in friend,'exact recovery bindings missing')
         check('mcgatewayRecoveryRehearsalUsed = true' in friend and 'if (!restored.removable())' in friend,'rehearsal replay or strict post-GET gate missing')

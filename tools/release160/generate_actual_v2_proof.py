@@ -188,9 +188,9 @@ footer = r'''
         var observed=fixture(missing);
         need(observed.mcgatewayFriendStateV2(nonce(),TARGET).contains("state=unknown verified=false stage=response category=http-404"));
         noDelete(missing);
-        for(int bits:new int[]{0,2,4,6})noDelete(answer(200,flags(false,(bits&2)!=0,(bits&4)!=0)));
-        for(int bits:new int[]{1,3,5,7}){
-            var f=fixture(answer(200,flags(true,(bits&2)!=0,(bits&4)!=0)),answer(204,"{}"),missing);
+        noDelete(answer(200,flags(false,false,false)));
+        for(int bits=1;bits<8;bits++){
+            var f=fixture(answer(200,flags((bits&1)!=0,(bits&2)!=0,(bits&4)!=0)),answer(204,"{}"),missing);
             need(f.mcgatewayFriendRemoveV2(nonce(),TARGET).contains("result=removed pre=present post=friendship-absent verified=true"));
             need(((ScriptedClient)f.mcgatewayV2HttpClient).methods.equals(List.of("GET","DELETE","GET")));
         }
@@ -224,7 +224,7 @@ footer = r'''
         var explicit=fixture(present,answer(204,"{}"),answer(200,flags(false,false,false)));
         need(explicit.mcgatewayFriendRemoveV2(nonce(),TARGET).contains("post=absent verified=true"));
         recoveryProofs();
-        System.out.println("PASS: actual overlay methods, scripted HTTP only; asymmetric404/friend-versus-request/freshness/identity/URI gates");
+        System.out.println("PASS: actual overlay methods, scripted HTTP only; asymmetric404/any-present-relationship/freshness/identity/URI gates");
     }
 }
 '''

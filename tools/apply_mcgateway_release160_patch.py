@@ -208,10 +208,10 @@ V2_FRIEND_MANAGER = r'''
         String account = "unavailable", session = "unavailable", pre = "unknown";
         try { long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(20); String raw = sessionManager.getXuid(), rawSession = sessionManager.mcgatewayV2SessionIdentity(); account = mcgatewayV2Hash(raw); session = mcgatewayV2Hash(rawSession);
             McgatewayV2State before = mcgatewayV2Read(target, raw, rawSession, deadline, McgatewayV2ReadPhase.BEFORE_DELETE); pre = before.state();
-            // A real friendship remains removable when a pending request flag is
-            // also present. The same DELETE endpoint unfriends and declines a
-            // pending request; request-only entries still fail closed.
-            if (!before.friend()) throw new IllegalStateException("pre-not-friend");
+            // Any present relationship is removable. The same exact-target
+            // DELETE unfriends an accepted relationship and declines a pending
+            // request. An absent target remains fail-closed at this boundary.
+            if (!before.state().equals("present")) throw new IllegalStateException("pre-not-present");
             if (toAdd.containsKey(target) || toRemove.containsKey(target) || !raw.equals(sessionManager.getXuid()) || !rawSession.equals(sessionManager.mcgatewayV2SessionIdentity())) throw new IllegalStateException("identity-before-delete");
             URI uri = URI.create(Constants.FRIEND.formatted(target)); HttpRequest request = HttpRequest.newBuilder().uri(uri).timeout(java.time.Duration.ofMillis(Math.min(8_000L, mcgatewayV2Remaining(deadline)))).header("Authorization", sessionManager.getTokenHeader()).DELETE().build();
             HttpResponse<byte[]> deleted = mcgatewayV2Send(request, deadline);
