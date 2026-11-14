@@ -62,6 +62,11 @@ def main():
         check(all(item in proof for item in ('for (Diagnostic diagnostic : Diagnostic.values())','token=secret','stage=internal category=internal','http-504')),'offline GET diagnostic proof incomplete')
         workflow_text=workflow.read_text()
         check('io.mcgateway.friend-state-diagnostics=1' in workflow_text and 'FriendStateV2DiagnosticProof.java' in workflow_text and ':core:mcgatewayFriendStateV2Diagnostics' in workflow_text,'diagnostic candidate image/proof gate missing')
+        network=java_method(core, '    protected void updatePresence()')
+        check('MCGATEWAY_XBOX_PRESENCE_POST_ACCEPTED status=200' in network and 'status = response.statusCode();' in network and 'if (status == 200)' in network, 'presence acceptance must require real HTTP 200')
+        check('schedule(this::updatePresence, delay, TimeUnit.SECONDS)' in network and 'mcgatewayPresenceFailures' in network, 'bounded failed presence retry absent')
+        check('mcgatewayRebuildPending = true' in core and 'mcgatewayRebuildPending = false' in core and 'if (mcgatewayRebuildInProgress) return;' in core, 'transactional rebuild/recursion guard missing')
+        check('NetworkReliabilityProof.java' in workflow_text and ':core:mcgatewayNetworkReliability' in workflow_text and 'io.mcgateway.presence-retry=1' in workflow_text, 'actual network proof/build labels missing')
         current_patch=PATCH.read_text()
         remove_start='    public String mcgatewayFriendRemoveV2'
         remove_source=java_method(current_patch, remove_start)

@@ -2,6 +2,8 @@
 """Exact Release160 overlay.  V2 removal is default-denied and source-only."""
 import argparse, hashlib, sys
 from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent / "release160"))
+from network_reliability import patch_core, unpatch_core
 
 # Installed only into a disposable upstream build tree.  V2 intentionally does
 # not touch the cached list, player history, normal queue or friend count.
@@ -444,6 +446,7 @@ def apply(root):
             raise ValueError('missing/unsafe source: ' + relative)
         current = path.read_text(encoding='utf-8')
         comparable = unwrap_v2_serialized_methods(current) if relative.endswith('/FriendManager.java') else current
+        if relative.endswith('/SessionManagerCore.java'): comparable = unpatch_core(current)
         if matches_original_hash(current, original_hash):
             original = current
         elif comparable.count(replacement) == 1:
@@ -457,6 +460,8 @@ def apply(root):
         expected = original.replace(anchor, replacement, 1)
         if relative.endswith('/FriendManager.java'):
             expected = wrap_v2_serialized_methods(expected)
+        if relative.endswith('/SessionManagerCore.java'):
+            expected = patch_core(expected)
         if current not in (original, expected):
             raise ValueError('unexpected patched source: ' + relative)
         prepared.append((path, current, expected))
