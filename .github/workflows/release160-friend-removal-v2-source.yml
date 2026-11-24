@@ -49,6 +49,7 @@ jobs:
           test "$(git -C upstream rev-parse HEAD)" = "$UPSTREAM_SHA"
           python3 -B overlay/tools/test_release160_patch.py upstream
           python3 -B overlay/tools/apply_mcgateway_release160_patch.py upstream
+          python3 -B overlay/tools/release160/test_player_counts_overlay.py upstream
           python3 -B overlay/tools/release160/apply_player_counts.py upstream
           python3 -B overlay/tools/release160/apply_player_counts.py upstream
           mkdir -p upstream/core/src/mcgatewayProof/java/com/rtm516/mcxboxbroadcast/core/configs
