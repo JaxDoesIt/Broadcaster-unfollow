@@ -23,6 +23,7 @@ public final class ConfigCompatibilityProof {
                 Files.write(file, original);
                 for (int run = 0; run < 2; run++) {
                     CoreConfig config = ConfigLoader.loadConfig(file.toFile(), "Standalone");
+                    check(!config.session().queryPlayerCounts() && config.session().playerCountFile().isEmpty(), "counts must default off");
                     check("relay.example.invalid".equals(config.session().remoteAddress()), "wrong effective relay host");
                     check("19132".equals(config.session().remotePort()), "wrong effective relay port");
                     check(Arrays.equals(original, Files.readAllBytes(file)), "existing config rewritten: rollback unsafe");

@@ -49,3 +49,10 @@ tasks.register<JavaExec>("mcgatewayNetworkReliability") {
     mainClass.set("com.rtm516.mcxboxbroadcast.core.NetworkReliabilityProof")
     maxHeapSize = "256m"
 }
+
+tasks.register<JavaExec>("mcgatewayPlayerCounts") {
+    dependsOn(mcgatewayProof.classesTaskName)
+    classpath = mcgatewayProof.runtimeClasspath
+    mainClass.set("com.rtm516.mcxboxbroadcast.core.PlayerCountProof")
+    maxHeapSize = "256m"
+}

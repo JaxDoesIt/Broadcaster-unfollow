@@ -1,4 +1,4 @@
-name: Release160 network reliability source candidate
+name: Release160 counts-only source candidate
 
 on:
   push:
@@ -8,6 +8,7 @@ on:
       - fix/release160-pending-friend-removal-2026-11-09
       - fix/release160-request-only-removal-2026-11-09
       - fix/presence-retry-session-rebuild-20261114
+      - feat/counts-only-20261124
     paths:
       - '.github/workflows/release160-friend-removal-v2-source.yml'
       - 'tools/apply_mcgateway_release160_patch.py'
@@ -29,7 +30,7 @@ jobs:
     timeout-minutes: 30
     env:
       UPSTREAM_SHA: 798d8b3a6107359643b525f1c9c3303c020ae09b
-      IMAGE: ghcr.io/jaxdoesit/mcgateway-broadcast:release-160-network-reliability-${{ github.sha }}
+      IMAGE: ghcr.io/jaxdoesit/mcgateway-broadcast:release-160-counts-only-${{ github.sha }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -48,6 +49,8 @@ jobs:
           test "$(git -C upstream rev-parse HEAD)" = "$UPSTREAM_SHA"
           python3 -B overlay/tools/test_release160_patch.py upstream
           python3 -B overlay/tools/apply_mcgateway_release160_patch.py upstream
+          python3 -B overlay/tools/release160/apply_player_counts.py upstream
+          python3 -B overlay/tools/release160/apply_player_counts.py upstream
           mkdir -p upstream/core/src/mcgatewayProof/java/com/rtm516/mcxboxbroadcast/core/configs
           mkdir -p upstream/core/src/mcgatewayProof/java/com/rtm516/mcxboxbroadcast/core
           cp overlay/tools/release160/ConfigCompatibilityProof.java upstream/core/src/mcgatewayProof/java/com/rtm516/mcxboxbroadcast/core/configs/
@@ -55,6 +58,7 @@ jobs:
           cp overlay/tools/release160/FriendRemovalV2InterleavingProof.java upstream/core/src/mcgatewayProof/java/com/rtm516/mcxboxbroadcast/core/
           cp overlay/tools/release160/FriendStateV2DiagnosticProof.java upstream/core/src/mcgatewayProof/java/com/rtm516/mcxboxbroadcast/core/
           cp overlay/tools/release160/FriendNonceWindowProof.java upstream/core/src/mcgatewayProof/java/com/rtm516/mcxboxbroadcast/core/
+          cp overlay/tools/release160/PlayerCountProof.java upstream/core/src/mcgatewayProof/java/com/rtm516/mcxboxbroadcast/core/
           cp overlay/tools/release160/NetworkReliabilityProof.java upstream/core/src/mcgatewayProof/java/com/rtm516/mcxboxbroadcast/core/
           python3 -B overlay/tools/release160/generate_actual_v2_proof.py upstream/core/src/mcgatewayProof/java/com/rtm516/mcxboxbroadcast/core/FriendStateV2ActualProof.java
           cat overlay/tools/release160/config-proof.gradle.kts >> upstream/core/build.gradle.kts
@@ -72,7 +76,16 @@ jobs:
       - uses: gradle/actions/setup-gradle@v5
       - name: Compile and run offline proofs
         working-directory: upstream
-        run: ./gradlew --no-daemon --max-workers=2 -Dorg.gradle.jvmargs=-Xmx2g build :core:mcgatewayConfigCompatibility :core:mcgatewayFriendRemovalV2Contract :core:mcgatewayFriendRemovalV2Interleaving :core:mcgatewayFriendStateV2Diagnostics :core:mcgatewayFriendStateV2Actual :core:mcgatewayFriendNonceWindow :core:mcgatewayNetworkReliability
+        run: ./gradlew --no-daemon --max-workers=2 -Dorg.gradle.jvmargs=-Xmx2g build :core:mcgatewayConfigCompatibility :core:mcgatewayFriendRemovalV2Contract :core:mcgatewayFriendRemovalV2Interleaving :core:mcgatewayFriendStateV2Diagnostics :core:mcgatewayFriendStateV2Actual :core:mcgatewayFriendNonceWindow :core:mcgatewayNetworkReliability :core:mcgatewayPlayerCounts
+      - name: Verify actual standalone artifact without authentication
+        working-directory: upstream
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/count-proof"
+          javac -proc:none -cp bootstrap/standalone/build/libs/MCXboxBroadcastStandalone.jar -d "$RUNNER_TEMP/count-proof" ../overlay/tools/release160/PlayerCountProof.java ../overlay/tools/release160/PlayerCountStandaloneProof.java
+          java -cp "$RUNNER_TEMP/count-proof:bootstrap/standalone/build/libs/MCXboxBroadcastStandalone.jar" com.rtm516.mcxboxbroadcast.core.PlayerCountProof
+          java -cp "$RUNNER_TEMP/count-proof:bootstrap/standalone/build/libs/MCXboxBroadcastStandalone.jar" com.rtm516.mcxboxbroadcast.core.PlayerCountStandaloneProof
       - uses: docker/setup-buildx-action@v4
       - uses: docker/login-action@v4
         with:
@@ -107,6 +120,7 @@ jobs:
             io.mcgateway.friend-state-diagnostics=1
             io.mcgateway.presence-retry=1
             io.mcgateway.session-rebuild-transaction=1
+            io.mcgateway.counts-only=1
             io.mcgateway.production-ready=false
       - name: Record non-production candidate
         run: |
